@@ -234,6 +234,10 @@
       // Last 10" selector can re-render instantly without re-fetching.
       let cachedRecentIssues = [];
 
+      function formatTimestamp(iso) {
+        return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      }
+
       function renderRecentUpdates(count) {
         const section = document.getElementById('recent-updates');
         const list = document.getElementById('recent-updates-list');
@@ -265,7 +269,7 @@
           title.appendChild(link);
 
           const stateBadge = document.createElement('span');
-          stateBadge.className = `badge rounded-pill ${issue.state === 'open' ? 'bg-warning' : 'bg-secondary'}`;
+          stateBadge.className = `badge ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
           stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
 
           header.append(title, stateBadge);
@@ -274,7 +278,13 @@
           excerpt.className = 'card-text text small mb-0';
           excerpt.textContent = truncate(issue.body, 200) || 'No further details provided.';
 
-          body.append(header, excerpt);
+          const timestamp = document.createElement('p');
+          timestamp.className = 'card-text text small mb-0 opacity-75';
+          timestamp.textContent = issue.state === 'closed' && issue.closed_at
+            ? `Resolved ${formatTimestamp(issue.closed_at)}`
+            : `Opened ${formatTimestamp(issue.created_at)}`;
+
+          body.append(header, excerpt, timestamp);
           item.appendChild(body);
           list.appendChild(item);
         }
