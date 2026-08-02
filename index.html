@@ -44,42 +44,15 @@
               <img src="logo.png" alt="Undiscovered Land Studios logo" class="logo-img mb-3">
 			        <h1 class="text" id="status-heading">Checking status&hellip;</h1>
               <p class="lead mb-4 text" id="status-subheading">Checking each service, please wait.</p>
-              <div class="row row-cols-1 row-cols-sm-2 g-3 mt-4" id="status-cards">
-                <div class="col" data-app="homepage">
-                  <div class="card sub-card h-100 text-center">
-                    <div class="card-body">
-                      <h5 class="card-title text">Homepage <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
-                      <p class="card-text text" data-message></p>
-                    </div>
-                  </div>
-                </div>
-                <div class="col" data-app="notflix">
-                  <div class="card sub-card h-100 text-center">
-                    <div class="card-body">
-                      <h5 class="card-title text">Notflix <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
-                      <p class="card-text text" data-message></p>
-                    </div>
-                  </div>
-                </div>
-                <div class="col" data-app="seerr">
-                  <div class="card sub-card h-100 text-center">
-                    <div class="card-body">
-                      <h5 class="card-title text">Seerr <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
-                      <p class="card-text text" data-message></p>
-                    </div>
-                  </div>
-                </div>
-                <div class="col" data-app="dockge">
-                  <div class="card sub-card h-100 text-center">
-                    <div class="card-body">
-                      <h5 class="card-title text">Dockge <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
-                      <p class="card-text text" data-message></p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <div class="row row-cols-1 row-cols-sm-2 g-3 mt-4" id="status-cards"></div>
               <div id="recent-updates" class="mt-4 text-start d-none">
-                <h5 class="text mb-3">Recent Updates</h5>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                  <h5 class="text mb-0">Recent Updates</h5>
+                  <select id="recent-updates-count" class="form-select form-select-sm" style="width: auto;">
+                    <option value="5" selected>Last 5</option>
+                    <option value="10">Last 10</option>
+                  </select>
+                </div>
                 <div id="recent-updates-list"></div>
               </div>
               <!--
@@ -124,16 +97,21 @@
         }
       }
 
-      // Only issues labeled with a known app key are matched; anything else
-      // in the repo (site bugs, feature requests, etc.) is ignored so it
-      // never shows up on the public page. Failures here (rate limit,
-      // network error) are swallowed so a GitHub API hiccup never blocks
-      // the reachability checks.
-      async function fetchAppIssues(apps) {
+      // Only issues labeled with a known app name are matched (label match is
+      // case-insensitive, so "Homepage" in apps.json matches a "homepage"
+      // label); anything else in the repo (site bugs, feature requests, etc.)
+      // is ignored so it never shows up on the public page. Fetches every
+      // issue (open and closed) in one call: issuesByApp (open only) drives
+      // the per-app card badge/message, recentIssues (open+closed, already
+      // newest-first from the API) feeds the Recent Updates section.
+      // Failures here are swallowed so a GitHub API hiccup never blocks the
+      // reachability checks.
+      async function fetchAppIssues(appNames) {
         const issuesByApp = {};
+        const recentIssues = [];
         try {
           const res = await fetch(
-            `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=open&per_page=100`,
+            `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
             { headers: { Accept: 'application/vnd.github+json' } }
           );
           if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
@@ -143,14 +121,18 @@
             const labels = issue.labels.map((label) =>
               (typeof label === 'string' ? label : label.name).toLowerCase()
             );
-            const appKey = Object.keys(apps).find((key) => labels.includes(key));
-            if (!appKey) continue;
-            (issuesByApp[appKey] ||= []).push(issue);
+            const appName = appNames.find((name) => labels.includes(name.toLowerCase()));
+            if (!appName) continue;
+
+            recentIssues.push({ app: appName, issue });
+            if (issue.state === 'open') {
+              (issuesByApp[appName] ||= []).push(issue);
+            }
           }
         } catch (err) {
           console.warn('Could not fetch status-update issues from GitHub', err);
         }
-        return issuesByApp;
+        return { issuesByApp, recentIssues };
       }
 
       function truncate(text, max) {
@@ -205,27 +187,72 @@
         }
       }
 
-      function renderRecentUpdates(issuesByApp) {
+      // Builds one status card per entry in apps.json, so adding or removing
+      // an app there is all it takes to add or remove it from the page.
+      function createStatusCard(app) {
+        const col = document.createElement('div');
+        col.className = 'col';
+        col.dataset.app = app;
+
+        const card = document.createElement('div');
+        card.className = 'card sub-card h-100 text-center';
+        const body = document.createElement('div');
+        body.className = 'card-body';
+
+        const title = document.createElement('h5');
+        title.className = 'card-title text';
+        title.append(`${app} `);
+        const badge = document.createElement('span');
+        badge.className = 'badge rounded-pill bg-secondary';
+        badge.dataset.badge = '';
+        badge.textContent = 'Checking…';
+        title.appendChild(badge);
+
+        const message = document.createElement('p');
+        message.className = 'card-text text';
+        message.dataset.message = '';
+
+        body.append(title, message);
+        card.appendChild(body);
+        col.appendChild(card);
+        return col;
+      }
+
+      function renderStatusCards(apps) {
+        const container = document.getElementById('status-cards');
+        container.innerHTML = '';
+        const cols = {};
+        for (const app of Object.keys(apps)) {
+          const col = createStatusCard(app);
+          container.appendChild(col);
+          cols[app] = col;
+        }
+        return cols;
+      }
+
+      // Caches the full (open + closed) matched issue list so the "Last 5 /
+      // Last 10" selector can re-render instantly without re-fetching.
+      let cachedRecentIssues = [];
+
+      function renderRecentUpdates(count) {
         const section = document.getElementById('recent-updates');
         const list = document.getElementById('recent-updates-list');
-        const entries = Object.entries(issuesByApp).flatMap(([app, issues]) =>
-          issues.map((issue) => ({ app, issue }))
-        );
 
-        if (!entries.length) {
+        if (!cachedRecentIssues.length) {
           section.classList.add('d-none');
           return;
         }
 
-        entries.sort((a, b) => new Date(b.issue.created_at) - new Date(a.issue.created_at));
-
         list.innerHTML = '';
-        for (const { app, issue } of entries) {
+        for (const { app, issue } of cachedRecentIssues.slice(0, count)) {
           const item = document.createElement('div');
           item.className = 'card sub-card text-start mb-2';
 
           const body = document.createElement('div');
           body.className = 'card-body';
+
+          const header = document.createElement('div');
+          header.className = 'd-flex justify-content-between align-items-start gap-2';
 
           const title = document.createElement('h6');
           title.className = 'card-title text mb-1';
@@ -234,15 +261,20 @@
           link.target = '_blank';
           link.rel = 'noopener';
           link.className = 'text';
-          link.textContent = `${app.charAt(0).toUpperCase()}${app.slice(1)}: ${issue.title}`;
+          link.textContent = `${app}: ${issue.title}`;
           title.appendChild(link);
+
+          const stateBadge = document.createElement('span');
+          stateBadge.className = `badge rounded-pill ${issue.state === 'open' ? 'bg-warning' : 'bg-secondary'}`;
+          stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
+
+          header.append(title, stateBadge);
 
           const excerpt = document.createElement('p');
           excerpt.className = 'card-text text small mb-0';
           excerpt.textContent = truncate(issue.body, 200) || 'No further details provided.';
 
-          body.appendChild(title);
-          body.appendChild(excerpt);
+          body.append(header, excerpt);
           item.appendChild(body);
           list.appendChild(item);
         }
@@ -250,33 +282,39 @@
         section.classList.remove('d-none');
       }
 
+      function initRecentUpdates(recentIssues) {
+        cachedRecentIssues = recentIssues;
+        const select = document.getElementById('recent-updates-count');
+        renderRecentUpdates(Number(select.value));
+        select.addEventListener('change', () => renderRecentUpdates(Number(select.value)));
+      }
+
       async function init() {
         const apps = await loadApps();
-        const cols = Array.from(document.querySelectorAll('#status-cards [data-app]'));
+        const cols = renderStatusCards(apps);
+        const appNames = Object.keys(apps);
 
-        const [reachability, issuesByApp] = await Promise.all([
+        const [reachability, { issuesByApp, recentIssues }] = await Promise.all([
           Promise.all(
-            cols.map(async (col) => {
-              const app = col.dataset.app;
+            appNames.map(async (app) => {
               const online = await checkApp(apps[app]);
               return { app, online };
             })
           ),
-          fetchAppIssues(apps),
+          fetchAppIssues(appNames),
         ]);
 
         const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
 
-        cols.forEach((col) => {
-          const app = col.dataset.app;
+        appNames.forEach((app) => {
           const online = onlineByApp[app];
           const issues = issuesByApp[app];
-          setBadge(col, online, Boolean(issues && issues.length));
-          setMessage(col, online, issues);
+          setBadge(cols[app], online, Boolean(issues && issues.length));
+          setMessage(cols[app], online, issues);
         });
 
         updateHeading(reachability.map(({ online }) => online));
-        renderRecentUpdates(issuesByApp);
+        initRecentUpdates(recentIssues);
       }
 
       init();
