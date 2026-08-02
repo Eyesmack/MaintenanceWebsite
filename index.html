@@ -159,34 +159,28 @@
         return clean.length > max ? `${clean.slice(0, max).trim()}…` : clean;
       }
 
-      function setBadge(col, online) {
+      function setBadge(col, online, hasIssue) {
         const badge = col.querySelector('[data-badge]');
         badge.textContent = online ? 'Online' : 'Offline';
-        badge.className = `badge rounded-pill ${online ? 'bg-success' : 'bg-danger'}`;
+        const badgeClass = online && hasIssue ? 'bg-warning' : online ? 'bg-success' : 'bg-danger';
+        badge.className = `badge rounded-pill ${badgeClass}`;
       }
 
-      // Shows the most recent open issue for this app (if any), regardless
-      // of reachability, so planned-maintenance notices still show even
-      // while the app is still online. Falls back to the reachability
-      // message otherwise.
+      // Shows the most recent open issue's title for this app (if any),
+      // regardless of reachability, so planned-maintenance notices still
+      // show even while the app is still online. Falls back to the
+      // reachability message otherwise.
       function setMessage(col, online, issues) {
         const message = col.querySelector('[data-message]');
         message.textContent = '';
 
         if (issues && issues.length) {
-          const latest = issues[0];
           const link = document.createElement('a');
-          link.href = latest.html_url;
+          link.href = issues[0].html_url;
           link.target = '_blank';
           link.rel = 'noopener';
-          link.textContent = latest.title;
+          link.textContent = issues[0].title;
           message.appendChild(link);
-
-          const excerpt = truncate(latest.body, 160);
-          if (excerpt) {
-            message.appendChild(document.createElement('br'));
-            message.appendChild(document.createTextNode(excerpt));
-          }
           return;
         }
 
@@ -276,8 +270,9 @@
         cols.forEach((col) => {
           const app = col.dataset.app;
           const online = onlineByApp[app];
-          setBadge(col, online);
-          setMessage(col, online, issuesByApp[app]);
+          const issues = issuesByApp[app];
+          setBadge(col, online, Boolean(issues && issues.length));
+          setMessage(col, online, issues);
         });
 
         updateHeading(reachability.map(({ online }) => online));
