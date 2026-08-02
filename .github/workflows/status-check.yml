@@ -1,0 +1,58 @@
+name: Status Check
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check apps and manage outage issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          # auto-outage marks issues this workflow owns, so it never touches
+          # manually-filed maintenance issues (which carry only the app label).
+          gh label create auto-outage --color d73a4a \
+            --description "Automatically opened by the status-check workflow" --force >/dev/null 2>&1 || true
+
+          while IFS=$'\t' read -r key url; do
+            gh label create "$key" --color 5319e7 \
+              --description "Status updates for $key" --force >/dev/null 2>&1 || true
+
+            status=$(curl -sL -A "GitHub-Actions-StatusCheck" -o /dev/null -w '%{http_code}' \
+              --max-time 10 --retry 2 --retry-delay 2 "$url" || echo "000")
+            echo "$key ($url) -> HTTP $status"
+
+            existing=$(gh issue list --repo "$GH_REPO" --label "$key,auto-outage" --state open \
+              --json number --jq '(.[0].number // "")')
+
+            if [[ "$status" =~ ^[23][0-9][0-9]$ ]]; then
+              if [[ -n "$existing" ]]; then
+                gh issue close "$existing" --repo "$GH_REPO" \
+                  --comment "Recovered — $key responded with HTTP $status at $(date -u +'%Y-%m-%d %H:%M UTC')."
+                echo "Closed issue #$existing for $key (recovered)"
+              fi
+            else
+              if [[ -z "$existing" ]]; then
+                gh issue create --repo "$GH_REPO" \
+                  --title "🔴 $key is unreachable" \
+                  --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
+                  --label "$key" --label auto-outage
+                echo "Opened new issue for $key"
+              else
+                echo "Issue #$existing already open for $key, skipping"
+              fi
+            fi
+          done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' apps.json)

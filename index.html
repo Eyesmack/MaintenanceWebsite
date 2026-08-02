@@ -94,13 +94,12 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     <script>
-      // Placeholder URLs — replace each with the real public URL for that app.
-      const APPS = {
-        homepage: 'https://isaacmason.co.nz',
-        notflix: 'https://movies.isaacmason.co.nz',
-        seerr: 'https://seerr.isaacmason.co.nz',
-        dockge: 'https://dockge.isaacmason.co.nz',
-      };
+      // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
+      // status-check workflow so both stay in sync from one source of truth.
+      async function loadApps() {
+        const res = await fetch('apps.json', { cache: 'no-store' });
+        return res.json();
+      }
 
       const CHECK_TIMEOUT_MS = 6000;
 
@@ -130,7 +129,7 @@
       // never shows up on the public page. Failures here (rate limit,
       // network error) are swallowed so a GitHub API hiccup never blocks
       // the reachability checks.
-      async function fetchAppIssues() {
+      async function fetchAppIssues(apps) {
         const issuesByApp = {};
         try {
           const res = await fetch(
@@ -144,7 +143,7 @@
             const labels = issue.labels.map((label) =>
               (typeof label === 'string' ? label : label.name).toLowerCase()
             );
-            const appKey = Object.keys(APPS).find((key) => labels.includes(key));
+            const appKey = Object.keys(apps).find((key) => labels.includes(key));
             if (!appKey) continue;
             (issuesByApp[appKey] ||= []).push(issue);
           }
@@ -185,7 +184,7 @@
         }
 
         message.textContent = online
-          ? 'This service is reachable.'
+          ? 'This service is reachable and has no known issues.'
           : 'This service could not be reached. It may be down, or blocking status checks from your network.';
       }
 
@@ -252,17 +251,18 @@
       }
 
       async function init() {
+        const apps = await loadApps();
         const cols = Array.from(document.querySelectorAll('#status-cards [data-app]'));
 
         const [reachability, issuesByApp] = await Promise.all([
           Promise.all(
             cols.map(async (col) => {
               const app = col.dataset.app;
-              const online = await checkApp(APPS[app]);
+              const online = await checkApp(apps[app]);
               return { app, online };
             })
           ),
-          fetchAppIssues(),
+          fetchAppIssues(apps),
         ]);
 
         const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
