@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CDN | Undiscovered Land Studios</title>
+    <title>Status | Isaac Mason</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <style>
       body {
@@ -11,13 +11,19 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
-        color: white;
+        background: linear-gradient(135deg, #0f1724 0%, #0b1220 100%);
+      }
+      .text{
+        color: #cbd5e1;
       }
       .home-card {
         backdrop-filter: blur(12px);
         background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .sub-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
       }
       .btn-custom {
         min-width: 220px;
@@ -32,19 +38,253 @@
   <body>
     <div class="container py-5">
       <div class="row justify-content-center">
-        <div class="col-12 col-md-8 col-lg-6">
+        <div class="col-12 col-md-10 col-lg-8">
           <div class="card home-card shadow-lg p-4 text-center">
             <div class="card-body">
               <img src="logo.png" alt="Undiscovered Land Studios logo" class="logo-img mb-3">
-              <p class="lead mb-4">Welcome to the Undiscovered Land Studios CDN.</p>
+			        <h1 class="text" id="status-heading">Checking status&hellip;</h1>
+              <p class="lead mb-4 text" id="status-subheading">Checking each service, please wait.</p>
+              <div class="row row-cols-1 row-cols-sm-2 g-3 mt-4" id="status-cards">
+                <div class="col" data-app="homepage">
+                  <div class="card sub-card h-100 text-center">
+                    <div class="card-body">
+                      <h5 class="card-title text">Homepage <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
+                      <p class="card-text text" data-message></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" data-app="notflix">
+                  <div class="card sub-card h-100 text-center">
+                    <div class="card-body">
+                      <h5 class="card-title text">Notflix <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
+                      <p class="card-text text" data-message></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" data-app="seerr">
+                  <div class="card sub-card h-100 text-center">
+                    <div class="card-body">
+                      <h5 class="card-title text">Seerr <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
+                      <p class="card-text text" data-message></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" data-app="dockge">
+                  <div class="card sub-card h-100 text-center">
+                    <div class="card-body">
+                      <h5 class="card-title text">Dockge <span class="badge rounded-pill bg-secondary" data-badge>Checking&hellip;</span></h5>
+                      <p class="card-text text" data-message></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div id="recent-updates" class="mt-4 text-start d-none">
+                <h5 class="text mb-3">Recent Updates</h5>
+                <div id="recent-updates-list"></div>
+              </div>
+              <!--
               <div class="d-grid gap-3 d-sm-flex justify-content-center flex-wrap">
                   <a href="https://isaacmason.co.nz" rel="noopener" class="btn btn-outline-light btn-lg btn-custom">Go Back</a>
               </div>
+              -->
             </div>
           </div>
         </div>
       </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+    <script>
+      // Placeholder URLs — replace each with the real public URL for that app.
+      const APPS = {
+        homepage: 'https://isaacmason.co.nz',
+        notflix: 'https://movies.isaacmason.co.nz',
+        seerr: 'https://seerr.isaacmason.co.nz',
+        dockge: 'https://dockge.isaacmason.co.nz',
+      };
+
+      const CHECK_TIMEOUT_MS = 6000;
+
+      // Open issues in this repo labeled with an app key (e.g. "notflix")
+      // are treated as manual status updates and shown on that app's card.
+      const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
+
+      // no-cors mode can't read the HTTP status (opaque response), so a
+      // resolved fetch only proves the host is reachable, not that the app
+      // itself is healthy. A rejected fetch (network error or our own
+      // timeout abort) is treated as offline.
+      async function checkApp(url) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+        try {
+          await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+          return true;
+        } catch {
+          return false;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
+      // Only issues labeled with a known app key are matched; anything else
+      // in the repo (site bugs, feature requests, etc.) is ignored so it
+      // never shows up on the public page. Failures here (rate limit,
+      // network error) are swallowed so a GitHub API hiccup never blocks
+      // the reachability checks.
+      async function fetchAppIssues() {
+        const issuesByApp = {};
+        try {
+          const res = await fetch(
+            `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=open&per_page=100`,
+            { headers: { Accept: 'application/vnd.github+json' } }
+          );
+          if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
+          const issues = await res.json();
+          for (const issue of issues) {
+            if (issue.pull_request) continue;
+            const labels = issue.labels.map((label) =>
+              (typeof label === 'string' ? label : label.name).toLowerCase()
+            );
+            const appKey = Object.keys(APPS).find((key) => labels.includes(key));
+            if (!appKey) continue;
+            (issuesByApp[appKey] ||= []).push(issue);
+          }
+        } catch (err) {
+          console.warn('Could not fetch status-update issues from GitHub', err);
+        }
+        return issuesByApp;
+      }
+
+      function truncate(text, max) {
+        const clean = (text || '').trim();
+        return clean.length > max ? `${clean.slice(0, max).trim()}…` : clean;
+      }
+
+      function setBadge(col, online) {
+        const badge = col.querySelector('[data-badge]');
+        badge.textContent = online ? 'Online' : 'Offline';
+        badge.className = `badge rounded-pill ${online ? 'bg-success' : 'bg-danger'}`;
+      }
+
+      // Shows the most recent open issue for this app (if any), regardless
+      // of reachability, so planned-maintenance notices still show even
+      // while the app is still online. Falls back to the reachability
+      // message otherwise.
+      function setMessage(col, online, issues) {
+        const message = col.querySelector('[data-message]');
+        message.textContent = '';
+
+        if (issues && issues.length) {
+          const latest = issues[0];
+          const link = document.createElement('a');
+          link.href = latest.html_url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = latest.title;
+          message.appendChild(link);
+
+          const excerpt = truncate(latest.body, 160);
+          if (excerpt) {
+            message.appendChild(document.createElement('br'));
+            message.appendChild(document.createTextNode(excerpt));
+          }
+          return;
+        }
+
+        message.textContent = online
+          ? 'This service is reachable.'
+          : 'This service could not be reached. It may be down, or blocking status checks from your network.';
+      }
+
+      function updateHeading(onlineFlags) {
+        const heading = document.getElementById('status-heading');
+        const subheading = document.getElementById('status-subheading');
+        const onlineCount = onlineFlags.filter(Boolean).length;
+
+        if (onlineCount === onlineFlags.length) {
+          heading.textContent = 'All Systems Operational';
+          subheading.textContent = 'Everything is up and running normally.';
+        } else if (onlineCount === 0) {
+          heading.textContent = "We'll be right back";
+          subheading.textContent = "Everything appears to be down. I'm looking into it — thanks for your patience!";
+        } else {
+          heading.textContent = 'Partial Outage';
+          subheading.textContent = 'Some services are currently unreachable. Check the status below for details.';
+        }
+      }
+
+      function renderRecentUpdates(issuesByApp) {
+        const section = document.getElementById('recent-updates');
+        const list = document.getElementById('recent-updates-list');
+        const entries = Object.entries(issuesByApp).flatMap(([app, issues]) =>
+          issues.map((issue) => ({ app, issue }))
+        );
+
+        if (!entries.length) {
+          section.classList.add('d-none');
+          return;
+        }
+
+        entries.sort((a, b) => new Date(b.issue.created_at) - new Date(a.issue.created_at));
+
+        list.innerHTML = '';
+        for (const { app, issue } of entries) {
+          const item = document.createElement('div');
+          item.className = 'card sub-card text-start mb-2';
+
+          const body = document.createElement('div');
+          body.className = 'card-body';
+
+          const title = document.createElement('h6');
+          title.className = 'card-title text mb-1';
+          const link = document.createElement('a');
+          link.href = issue.html_url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.className = 'text';
+          link.textContent = `${app.charAt(0).toUpperCase()}${app.slice(1)}: ${issue.title}`;
+          title.appendChild(link);
+
+          const excerpt = document.createElement('p');
+          excerpt.className = 'card-text text small mb-0';
+          excerpt.textContent = truncate(issue.body, 200) || 'No further details provided.';
+
+          body.appendChild(title);
+          body.appendChild(excerpt);
+          item.appendChild(body);
+          list.appendChild(item);
+        }
+
+        section.classList.remove('d-none');
+      }
+
+      async function init() {
+        const cols = Array.from(document.querySelectorAll('#status-cards [data-app]'));
+
+        const [reachability, issuesByApp] = await Promise.all([
+          Promise.all(
+            cols.map(async (col) => {
+              const app = col.dataset.app;
+              const online = await checkApp(APPS[app]);
+              return { app, online };
+            })
+          ),
+          fetchAppIssues(),
+        ]);
+
+        const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
+
+        cols.forEach((col) => {
+          const app = col.dataset.app;
+          const online = onlineByApp[app];
+          setBadge(col, online);
+          setMessage(col, online, issuesByApp[app]);
+        });
+
+        updateHeading(reachability.map(({ online }) => online));
+        renderRecentUpdates(issuesByApp);
+      }
+
+      init();
+    </script>
   </body>
 </html>
