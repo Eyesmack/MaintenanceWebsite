@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.3.0';
+const STATUS_PAGE_VERSION = 'v1.3.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -32,6 +32,44 @@ async function checkApp(url) {
   }
 }
 
+// Converts a naive "YYYY-MM-DD HH:MM" string (meant as wall-clock time in
+// `timeZone`) into the actual instant it represents, without any external
+// date library. Mirrors the workflow's `TZ='Pacific/Auckland' date -d`
+// logic so the client and the GitHub Action agree on what "now" means
+// relative to a maintenance window.
+function getTimeZoneOffsetMinutes(timeZone, date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return (asUTC - date.getTime()) / 60000;
+}
+
+function parseZonedDateTime(naiveStr, timeZone) {
+  const guessUTC = new Date(`${naiveStr.replace(' ', 'T')}Z`);
+  const offsetMinutes = getTimeZoneOffsetMinutes(timeZone, guessUTC);
+  return new Date(guessUTC.getTime() - offsetMinutes * 60000);
+}
+
+// Same Maintenance-Start/Maintenance-End convention (and NZ timezone) the
+// status-check workflow looks for when deciding whether to skip filing an
+// outage issue. Returns null if either line is missing/unparseable.
+function extractMaintenanceWindow(body) {
+  const startMatch = (body || '').match(/Maintenance-Start:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+  const endMatch = (body || '').match(/Maintenance-End:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+  if (!startMatch || !endMatch) return null;
+  return {
+    start: parseZonedDateTime(startMatch[1], 'Pacific/Auckland'),
+    end: parseZonedDateTime(endMatch[1], 'Pacific/Auckland'),
+  };
+}
+
 // Only issues labeled with a known app name are matched (label match is
 // case-insensitive, so "Homepage" in apps.json matches a "homepage"
 // label); anything else in the repo (site bugs, feature requests, etc.)
@@ -45,6 +83,7 @@ async function fetchAppIssues(appNames) {
   const issuesByApp = {};
   const recentIssues = [];
   const hasOpenAutoOutage = {};
+  const inMaintenance = {};
   try {
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
@@ -70,12 +109,21 @@ async function fetchAppIssues(appNames) {
         if (labels.includes('auto-outage')) {
           hasOpenAutoOutage[appName] = true;
         }
+        if (isUpdate) {
+          const window = extractMaintenanceWindow(issue.body);
+          if (window) {
+            const now = new Date();
+            if (now >= window.start && now <= window.end) {
+              inMaintenance[appName] = true;
+            }
+          }
+        }
       }
     }
   } catch (err) {
     console.warn('Could not fetch status-update issues from GitHub', err);
   }
-  return { issuesByApp, recentIssues, hasOpenAutoOutage };
+  return { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance };
 }
 
 function truncate(text, max) {
@@ -83,8 +131,13 @@ function truncate(text, max) {
   return clean.length > max ? `${clean.slice(0, max).trim()}…` : clean;
 }
 
-function setBadge(col, online, hasIssue) {
+function setBadge(col, online, hasIssue, inMaintenance) {
   const badge = col.querySelector('[data-badge]');
+  if (inMaintenance) {
+    badge.textContent = 'Maintenance';
+    badge.className = 'badge rounded-pill bg-info';
+    return;
+  }
   badge.textContent = online ? 'Online' : 'Offline';
   const badgeClass = online && hasIssue ? 'bg-warning' : online ? 'bg-success' : 'bg-danger';
   badge.className = `badge rounded-pill ${badgeClass}`;
@@ -274,7 +327,7 @@ async function init() {
   const cols = renderStatusCards(apps);
   const appNames = Object.keys(apps);
 
-  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage }] = await Promise.all([
+  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance }] = await Promise.all([
     Promise.all(
       appNames.map(async (app) => {
         const online = await checkApp(apps[app]);
@@ -289,15 +342,18 @@ async function init() {
   // A no-cors browser probe can't see HTTP error statuses (e.g. 502) — it
   // only detects total network failure. The workflow's auto-outage issue
   // (based on a real status check) closes that gap: if one's open, treat
-  // the app as offline regardless of what the probe saw.
+  // the app as offline regardless of what the probe saw. An active
+  // maintenance window is also factored in here (rather than just at the
+  // badge level) so it correctly keeps the app out of the "All Systems
+  // Operational" count too.
   const correctedOnlineByApp = Object.fromEntries(
-    appNames.map((app) => [app, onlineByApp[app] && !hasOpenAutoOutage[app]])
+    appNames.map((app) => [app, onlineByApp[app] && !hasOpenAutoOutage[app] && !inMaintenance[app]])
   );
 
   appNames.forEach((app) => {
     const online = correctedOnlineByApp[app];
     const issues = issuesByApp[app];
-    setBadge(cols[app], online, Boolean(issues && issues.length));
+    setBadge(cols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
     setMessage(cols[app], online, issues);
   });
 
