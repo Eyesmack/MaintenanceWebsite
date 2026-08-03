@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.8';
+const STATUS_PAGE_VERSION = 'v1.4.9';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -325,7 +325,7 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = `${apps.join(', ')}: ${issue.title}`;
+    titleText.textContent = issue.title;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
@@ -360,6 +360,10 @@ function renderRecentUpdates(count) {
     const collapseBody = document.createElement('div');
     collapseBody.className = 'accordion-body';
 
+    const affectedApps = document.createElement('p');
+    affectedApps.className = 'small mb-2';
+    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+
     const description = document.createElement('p');
     description.dataset.description = '';
     description.className = 'preserve-lines';
@@ -369,7 +373,7 @@ function renderRecentUpdates(count) {
     timestamp.className = 'small opacity-75 mb-0';
     timestamp.textContent = timestampText(issue, isUpdate);
 
-    collapseBody.append(description, timestamp);
+    collapseBody.append(affectedApps, description, timestamp);
     collapse.appendChild(collapseBody);
 
     item.append(header, collapse);
