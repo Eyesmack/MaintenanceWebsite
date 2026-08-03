@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.10';
+const STATUS_PAGE_VERSION = 'v1.5.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -14,6 +14,19 @@ const CHECK_TIMEOUT_MS = 6000;
 // Open issues in this repo labeled with an app key (e.g. "notflix")
 // are treated as manual status updates and shown on that app's card.
 const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
+
+// Set this to when you actually started using this status page — "All
+// Time" uptime is measured from here, since there's no real
+// monitoring-start record to derive it from automatically.
+const MONITORING_START_DATE = '2026-08-02T00:00:00Z';
+
+const UPTIME_TIMEFRAMES = {
+  '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
+  '7d': { label: '7 Days', ms: 7 * 24 * 60 * 60 * 1000 },
+  '1m': { label: '1 Month', ms: 30 * 24 * 60 * 60 * 1000 },
+  '1y': { label: '1 Year', ms: 365 * 24 * 60 * 60 * 1000 },
+  all: { label: 'All Time', ms: null },
+};
 
 // no-cors mode can't read the HTTP status (opaque response), so a
 // resolved fetch only proves the host is reachable, not that the app
@@ -84,6 +97,7 @@ async function fetchAppIssues(appNames) {
   const recentIssues = [];
   const hasOpenAutoOutage = {};
   const inMaintenance = {};
+  const downEventsByApp = {};
   try {
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
@@ -107,6 +121,14 @@ async function fetchAppIssues(appNames) {
       // downtime duration for it (a maintenance notice isn't "downtime").
       const isUpdate = labels.includes('update');
       recentIssues.push({ apps: matchedApps, issue, isUpdate });
+
+      // Every matched issue (open or closed, planned or not) counts as a
+      // down-period for uptime% purposes — tracked unconditionally, unlike
+      // issuesByApp below which is open-only and drives the live badge.
+      for (const appName of matchedApps) {
+        (downEventsByApp[appName] ||= []).push(issue);
+      }
+
       if (issue.state === 'open') {
         for (const appName of matchedApps) {
           (issuesByApp[appName] ||= []).push(issue);
@@ -128,7 +150,7 @@ async function fetchAppIssues(appNames) {
   } catch (err) {
     console.warn('Could not fetch status-update issues from GitHub', err);
   }
-  return { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance };
+  return { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp };
 }
 
 function truncate(text, max) {
@@ -213,7 +235,30 @@ function createStatusCard(app) {
   message.className = 'card-text text';
   message.dataset.message = '';
 
-  body.append(title, message);
+  const uptimeRow = document.createElement('div');
+  uptimeRow.className = 'd-flex justify-content-between align-items-center gap-2 mt-2';
+
+  const uptimeText = document.createElement('p');
+  uptimeText.className = 'card-text text small mb-0';
+  uptimeText.dataset.uptime = '';
+  uptimeText.textContent = 'Calculating…';
+
+  const uptimeSelect = document.createElement('select');
+  uptimeSelect.className = 'form-select form-select-sm';
+  uptimeSelect.style.width = 'auto';
+  uptimeSelect.dataset.uptimeSelect = '';
+  uptimeSelect.dataset.app = app;
+  for (const [key, { label }] of Object.entries(UPTIME_TIMEFRAMES)) {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    if (key === '24h') option.selected = true;
+    uptimeSelect.appendChild(option);
+  }
+
+  uptimeRow.append(uptimeText, uptimeSelect);
+
+  body.append(title, message, uptimeRow);
   card.appendChild(body);
   col.appendChild(card);
   return col;
@@ -235,6 +280,31 @@ function renderStatusCards(apps) {
 // Last 10" selector can re-render instantly without re-fetching.
 let cachedRecentIssues = [];
 
+// Per-app down-event history, cached so the uptime timeframe selector can
+// recompute instantly without re-fetching.
+let cachedDownEventsByApp = {};
+
+function renderUptime(app) {
+  const select = document.querySelector(`[data-uptime-select][data-app="${app}"]`);
+  const text = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime]`);
+  if (!select || !text) return;
+
+  const timeframeKey = select.value;
+  const { label } = UPTIME_TIMEFRAMES[timeframeKey];
+  const [windowStart, windowEnd] = getUptimeWindow(timeframeKey, new Date());
+  const percent = calculateUptimePercent(cachedDownEventsByApp[app] || [], windowStart, windowEnd);
+  text.textContent = `${percent.toFixed(2)}% uptime (${label})`;
+}
+
+// One delegated listener for every card's uptime selector, rather than one
+// per card — recomputes from the cached issue history, no re-fetch.
+function initUptimeSelectors() {
+  document.getElementById('status-cards').addEventListener('change', (event) => {
+    if (!event.target.matches('[data-uptime-select]')) return;
+    renderUptime(event.target.dataset.app);
+  });
+}
+
 function formatTimestamp(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -250,6 +320,45 @@ function formatDuration(ms) {
   if (hours) parts.push(`${hours}h`);
   if (minutes || !parts.length) parts.push(`${minutes}m`);
   return parts.join(' ');
+}
+
+function getUptimeWindow(timeframeKey, now) {
+  const timeframe = UPTIME_TIMEFRAMES[timeframeKey];
+  const start = timeframeKey === 'all'
+    ? new Date(MONITORING_START_DATE)
+    : new Date(now.getTime() - timeframe.ms);
+  return [start, now];
+}
+
+// Treats every issue's [created_at, closed_at || now] as a down-period,
+// clips each to the window, merges overlaps (so overlapping issues never
+// get double-counted), and returns the uptime percentage for that window.
+function calculateUptimePercent(issues, windowStart, windowEnd) {
+  const windowMs = windowEnd - windowStart;
+  if (windowMs <= 0) return 100;
+
+  const intervals = issues
+    .map((issue) => {
+      const start = new Date(issue.created_at);
+      const end = issue.closed_at ? new Date(issue.closed_at) : windowEnd;
+      return [Math.max(start, windowStart), Math.min(end, windowEnd)];
+    })
+    .filter(([start, end]) => end > start)
+    .sort((a, b) => a[0] - b[0]);
+
+  const merged = [];
+  for (const [start, end] of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1]) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  const downtimeMs = merged.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const uptimeMs = Math.max(0, windowMs - downtimeMs);
+  return Math.min(100, (uptimeMs / windowMs) * 100);
 }
 
 function timestampText(issue, isUpdate) {
@@ -423,7 +532,7 @@ async function init() {
   const cols = renderStatusCards(apps);
   const appNames = Object.keys(apps);
 
-  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance }] = await Promise.all([
+  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }] = await Promise.all([
     Promise.all(
       appNames.map(async (app) => {
         const online = await checkApp(apps[app]);
@@ -432,6 +541,8 @@ async function init() {
     ),
     fetchAppIssues(appNames),
   ]);
+
+  cachedDownEventsByApp = downEventsByApp;
 
   const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
 
@@ -451,8 +562,10 @@ async function init() {
     const issues = issuesByApp[app];
     setBadge(cols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
     setMessage(cols[app], online, issues);
+    renderUptime(app);
   });
 
+  initUptimeSelectors();
   updateHeading(appNames.map((app) => correctedOnlineByApp[app]));
   initRecentUpdates(recentIssues);
 
