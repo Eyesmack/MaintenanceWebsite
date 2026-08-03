@@ -63,8 +63,11 @@ jobs:
                 maintenance_body=$(gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
                   --json body --jq '(.[0].body // "")')
 
-                start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1)
-                end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1)
+                # grep exits 1 when there's no match (the normal case when
+                # no maintenance window is declared) — with pipefail + the
+                # shell's own -e, that would otherwise kill the whole job.
+                start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+                end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
 
                 in_window=false
                 if [[ -n "$start_str" && -n "$end_str" ]]; then
