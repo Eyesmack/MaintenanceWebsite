@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.0';
+const STATUS_PAGE_VERSION = 'v1.4.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -302,11 +302,15 @@ function renderRecentUpdates(count) {
     item.dataset.issueNumber = String(issue.number);
     item.dataset.issueState = issue.state;
 
+    // A flex row: the toggle button (still the only click target for
+    // expand/collapse) plus a separate link icon after it. The link can't
+    // live inside the button itself — nested interactive elements are
+    // invalid HTML and the click would also toggle the accordion.
     const header = document.createElement('h2');
-    header.className = 'accordion-header';
+    header.className = 'accordion-header d-flex align-items-center';
 
     const button = document.createElement('button');
-    button.className = 'accordion-button collapsed';
+    button.className = 'accordion-button collapsed flex-grow-1';
     button.type = 'button';
     button.setAttribute('data-bs-toggle', 'collapse');
     button.setAttribute('data-bs-target', `#${collapseId}`);
@@ -320,15 +324,25 @@ function renderRecentUpdates(count) {
 
     const stateBadge = document.createElement('span');
     if (isUpdate) {
-      stateBadge.className = 'badge bg-info';
+      stateBadge.className = 'badge bg-info me-2';
       stateBadge.textContent = 'Planned';
     } else {
-      stateBadge.className = `badge ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
+      stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
       stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
     }
     titleWrap.append(titleText, stateBadge);
     button.appendChild(titleWrap);
-    header.appendChild(button);
+
+    const issueLink = document.createElement('a');
+    issueLink.href = issue.html_url;
+    issueLink.target = '_blank';
+    issueLink.rel = 'noopener';
+    issueLink.className = 'btn btn-sm btn-outline-secondary ms-2';
+    issueLink.title = 'View on GitHub';
+    issueLink.setAttribute('aria-label', 'View issue on GitHub');
+    issueLink.textContent = '↗';
+
+    header.append(button, issueLink);
 
     // No data-bs-parent: "Always Open" accordion — expanding one item
     // doesn't collapse the others.
@@ -341,6 +355,7 @@ function renderRecentUpdates(count) {
 
     const description = document.createElement('p');
     description.dataset.description = '';
+    description.className = 'preserve-lines';
     description.textContent = truncate(issue.body, 200) || 'No further details provided.';
 
     const timestamp = document.createElement('p');
@@ -378,6 +393,7 @@ function initRecentUpdatesAccordion() {
 
     const resolution = document.createElement('p');
     resolution.dataset.closingComment = '';
+    resolution.className = 'preserve-lines';
     resolution.textContent = `Resolution: ${truncate(comment, 300)}`;
     body.querySelector('[data-description]').after(resolution);
   });
