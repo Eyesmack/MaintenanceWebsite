@@ -16,6 +16,9 @@
       .text{
         color: #cbd5e1;
       }
+      .footer-text{
+        color: #6a7585;
+      }
       .home-card {
         backdrop-filter: blur(12px);
         background: rgba(255, 255, 255, 0.08);
@@ -42,7 +45,7 @@
           <div class="card home-card shadow-lg p-4 text-center">
             <div class="card-body">
               <img src="logo.png" alt="Undiscovered Land Studios logo" class="logo-img mb-3">
-			        <h1 class="text" id="status-heading">Checking status&hellip;</h1>
+			        <h1 class="text" id="status-heading">Checking status <div class="spinner-border text-secondary" role="status"><span class="visually-hidden">Loading...</span></div></h1>
               <p class="lead mb-4 text" id="status-subheading">Checking each service, please wait.</p>
               <div class="row row-cols-1 row-cols-sm-2 g-3 mt-4" id="status-cards"></div>
               <div id="recent-updates" class="mt-4 text-start d-none">
@@ -60,6 +63,9 @@
                   <a href="https://isaacmason.co.nz" rel="noopener" class="btn btn-outline-light btn-lg btn-custom">Go Back</a>
               </div>
               -->
+            </div>
+            <div class="card-footer footer-text">
+              <small id="last-updated"><p class="card-text placeholder-glow"><span class="placeholder col-4"></span></p></small>
             </div>
           </div>
         </div>

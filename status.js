@@ -256,6 +256,8 @@ async function init() {
 
   updateHeading(reachability.map(({ online }) => online));
   initRecentUpdates(recentIssues);
+
+  document.getElementById('last-updated').textContent = `Last updated: ${formatTimestamp(new Date())}`;
 }
 
 init();
