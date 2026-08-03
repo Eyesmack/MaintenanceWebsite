@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.7';
+const STATUS_PAGE_VERSION = 'v1.4.8';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -96,25 +96,30 @@ async function fetchAppIssues(appNames) {
       const labels = issue.labels.map((label) =>
         (typeof label === 'string' ? label : label.name).toLowerCase()
       );
-      const appName = appNames.find((name) => labels.includes(name.toLowerCase()));
-      if (!appName) continue;
+      // An issue can carry more than one app's label (e.g. a
+      // whole-server maintenance notice) — match all of them, not just
+      // the first, so it shows up on every affected app's card.
+      const matchedApps = appNames.filter((name) => labels.includes(name.toLowerCase()));
+      if (!matchedApps.length) continue;
 
       // The "update" label marks an issue as a planned/informational note
       // rather than a real incident, so Recent Updates knows not to show a
       // downtime duration for it (a maintenance notice isn't "downtime").
       const isUpdate = labels.includes('update');
-      recentIssues.push({ app: appName, issue, isUpdate });
+      recentIssues.push({ apps: matchedApps, issue, isUpdate });
       if (issue.state === 'open') {
-        (issuesByApp[appName] ||= []).push(issue);
-        if (labels.includes('auto-outage')) {
-          hasOpenAutoOutage[appName] = true;
-        }
-        if (isUpdate) {
-          const window = extractMaintenanceWindow(issue.body);
-          if (window) {
-            const now = new Date();
-            if (now >= window.start && now <= window.end) {
-              inMaintenance[appName] = true;
+        for (const appName of matchedApps) {
+          (issuesByApp[appName] ||= []).push(issue);
+          if (labels.includes('auto-outage')) {
+            hasOpenAutoOutage[appName] = true;
+          }
+          if (isUpdate) {
+            const window = extractMaintenanceWindow(issue.body);
+            if (window) {
+              const now = new Date();
+              if (now >= window.start && now <= window.end) {
+                inMaintenance[appName] = true;
+              }
             }
           }
         }
@@ -294,7 +299,7 @@ function renderRecentUpdates(count) {
   }
 
   accordion.innerHTML = '';
-  for (const { app, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
+  for (const { apps, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
     const collapseId = `ru-collapse-${issue.number}`;
 
     const item = document.createElement('div');
@@ -320,7 +325,7 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = `${issue.title}`; //`${app}: ${issue.title}`;
+    titleText.textContent = `${apps.join(', ')}: ${issue.title}`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
