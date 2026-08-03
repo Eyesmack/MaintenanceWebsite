@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.5';
+const STATUS_PAGE_VERSION = 'v1.4.6';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -358,7 +358,7 @@ function renderRecentUpdates(count) {
     const description = document.createElement('p');
     description.dataset.description = '';
     description.className = 'preserve-lines';
-    description.textContent = truncate(issue.body, 200) || 'No further details provided.';
+    description.textContent = truncate(issue.body, 300) || 'No further details provided.';
 
     const timestamp = document.createElement('p');
     timestamp.className = 'small opacity-75 mb-0';
@@ -396,7 +396,7 @@ function initRecentUpdatesAccordion() {
     const resolution = document.createElement('p');
     resolution.dataset.closingComment = '';
     resolution.className = 'preserve-lines';
-    resolution.textContent = `Resolution: ${truncate(comment, 300)}`;
+    resolution.textContent = `Closing Comment: ${truncate(comment, 300)}`;
     body.querySelector('[data-description]').after(resolution);
   });
 }
