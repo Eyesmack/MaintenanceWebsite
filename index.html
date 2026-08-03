@@ -36,6 +36,12 @@
         width: 100%;
         height: auto;
       }
+      /* When there's an odd number of app cards, the last one sits alone on
+         its row — center it instead of leaving it stuck to the left. */
+      #status-cards > .col:nth-last-child(1):nth-child(odd) {
+        margin-left: auto;
+        margin-right: auto;
+      }
     </style>
   </head>
   <body>
