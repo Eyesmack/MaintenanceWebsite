@@ -1,6 +1,11 @@
 name: Status Check
 
 on:
+  # GitHub's own scheduler delays/drops runs under global load, so a
+  # Cloudflare Worker Cron Trigger is the primary driver: it calls the
+  # workflow_dispatch API below every 5 minutes. This schedule stays as a
+  # harmless fallback (dedupe via the auto-outage label makes double-firing
+  # safe either way).
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
