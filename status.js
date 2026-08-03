@@ -55,7 +55,11 @@ async function fetchAppIssues(appNames) {
       const appName = appNames.find((name) => labels.includes(name.toLowerCase()));
       if (!appName) continue;
 
-      recentIssues.push({ app: appName, issue });
+      // The "update" label marks an issue as a planned/informational note
+      // rather than a real incident, so Recent Updates knows not to show a
+      // downtime duration for it (a maintenance notice isn't "downtime").
+      const isUpdate = labels.includes('update');
+      recentIssues.push({ app: appName, issue, isUpdate });
       if (issue.state === 'open') {
         (issuesByApp[appName] ||= []).push(issue);
       }
@@ -169,6 +173,19 @@ function formatTimestamp(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatDuration(ms) {
+  const totalMinutes = Math.max(0, Math.round(ms / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || !parts.length) parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
+
 function renderRecentUpdates(count) {
   const section = document.getElementById('recent-updates');
   const list = document.getElementById('recent-updates-list');
@@ -179,7 +196,7 @@ function renderRecentUpdates(count) {
   }
 
   list.innerHTML = '';
-  for (const { app, issue } of cachedRecentIssues.slice(0, count)) {
+  for (const { app, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
     const item = document.createElement('div');
     item.className = 'card sub-card text-start mb-2';
 
@@ -211,9 +228,18 @@ function renderRecentUpdates(count) {
 
     const timestamp = document.createElement('p');
     timestamp.className = 'card-text text small mb-0 opacity-75';
-    timestamp.textContent = issue.state === 'closed' && issue.closed_at
-      ? `Resolved ${formatTimestamp(issue.closed_at)}`
-      : `Opened ${formatTimestamp(issue.created_at)}`;
+    if (isUpdate) {
+      // Planned/informational update: show when, never a duration — it
+      // wasn't measured downtime, just a note that stayed open a while.
+      timestamp.textContent = issue.state === 'closed' && issue.closed_at
+        ? `Resolved ${formatTimestamp(issue.closed_at)}`
+        : `Opened ${formatTimestamp(issue.created_at)}`;
+    } else if (issue.state === 'closed' && issue.closed_at) {
+      const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
+      timestamp.textContent = `Down for ${duration} — resolved ${formatTimestamp(issue.closed_at)}`;
+    } else {
+      timestamp.textContent = `Down since ${formatTimestamp(issue.created_at)}`;
+    }
 
     body.append(header, excerpt, timestamp);
     item.appendChild(body);
