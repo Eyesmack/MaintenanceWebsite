@@ -58,18 +58,12 @@
       }
       /* Borderless "ghost" icon button for the accordion's view-on-GitHub
          link, so it blends into the row instead of standing out as a boxed
-         Bootstrap button against the flat dark theme. Left corners are
-         squared off so the seam against the toggle button is a straight
-         line — Bootstrap otherwise rounds the toggle's own corners on the
-         first/last accordion item, which now only spans part of the row. */
+         Bootstrap button against the flat dark theme. */
       .accordion-link-btn {
         color: #cbd5e1;
         background: transparent;
         border: none;
-        border-top-left-radius: 0;
-        border-bottom-left-radius: 0;
-        border-top-right-radius: 0.375rem;
-        border-bottom-right-radius: 0.375rem;
+        border-radius: 0.375rem;
         padding: 0.25rem 0.5rem;
         text-decoration: none;
         display: inline-flex;
