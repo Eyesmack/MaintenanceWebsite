@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.3.1';
+const STATUS_PAGE_VERSION = 'v1.4.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -247,35 +247,76 @@ function formatDuration(ms) {
   return parts.join(' ');
 }
 
+function timestampText(issue, isUpdate) {
+  if (isUpdate) {
+    // Planned/informational update: show when, never a duration — it
+    // wasn't measured downtime, just a note that stayed open a while.
+    return issue.state === 'closed' && issue.closed_at
+      ? `Resolved ${formatTimestamp(issue.closed_at)}`
+      : `Opened ${formatTimestamp(issue.created_at)}`;
+  }
+  if (issue.state === 'closed' && issue.closed_at) {
+    const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
+    return `Down for ${duration} — resolved ${formatTimestamp(issue.closed_at)}`;
+  }
+  return `Down since ${formatTimestamp(issue.created_at)}`;
+}
+
+// A closed issue's "closing comment" isn't a distinct GitHub field — it's
+// just the last comment on the issue (what the workflow posts via
+// `--comment` when auto-closing an outage, or whatever's left when closing
+// one by hand). Cached per issue number so re-expanding an accordion item
+// never re-fetches.
+const closingCommentCache = new Map();
+
+async function fetchClosingComment(issueNumber) {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments`,
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
+    const comments = await res.json();
+    return comments.length ? comments[comments.length - 1].body : null;
+  } catch (err) {
+    console.warn(`Could not fetch closing comment for issue #${issueNumber}`, err);
+    return null;
+  }
+}
+
 function renderRecentUpdates(count) {
   const section = document.getElementById('recent-updates');
-  const list = document.getElementById('recent-updates-list');
+  const accordion = document.getElementById('recent-updates-accordion');
 
   if (!cachedRecentIssues.length) {
     section.classList.add('d-none');
     return;
   }
 
-  list.innerHTML = '';
+  accordion.innerHTML = '';
   for (const { app, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
+    const collapseId = `ru-collapse-${issue.number}`;
+
     const item = document.createElement('div');
-    item.className = 'card sub-card text-start mb-2';
+    item.className = 'accordion-item';
+    item.dataset.issueNumber = String(issue.number);
+    item.dataset.issueState = issue.state;
 
-    const body = document.createElement('div');
-    body.className = 'card-body';
+    const header = document.createElement('h2');
+    header.className = 'accordion-header';
 
-    const header = document.createElement('div');
-    header.className = 'd-flex justify-content-between align-items-start gap-2';
+    const button = document.createElement('button');
+    button.className = 'accordion-button collapsed';
+    button.type = 'button';
+    button.setAttribute('data-bs-toggle', 'collapse');
+    button.setAttribute('data-bs-target', `#${collapseId}`);
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-controls', collapseId);
 
-    const title = document.createElement('h6');
-    title.className = 'card-title text mb-1';
-    const link = document.createElement('a');
-    link.href = issue.html_url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.className = 'text';
-    link.textContent = `${app}: ${issue.title}`;
-    title.appendChild(link);
+    const titleWrap = document.createElement('span');
+    titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
+    const titleText = document.createElement('span');
+    titleText.textContent = `${app}: ${issue.title}`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate) {
@@ -285,38 +326,66 @@ function renderRecentUpdates(count) {
       stateBadge.className = `badge ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
       stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
     }
+    titleWrap.append(titleText, stateBadge);
+    button.appendChild(titleWrap);
+    header.appendChild(button);
 
-    header.append(title, stateBadge);
+    // No data-bs-parent: "Always Open" accordion — expanding one item
+    // doesn't collapse the others.
+    const collapse = document.createElement('div');
+    collapse.id = collapseId;
+    collapse.className = 'accordion-collapse collapse';
 
-    const excerpt = document.createElement('p');
-    excerpt.className = 'card-text text small mb-0';
-    excerpt.textContent = truncate(issue.body, 200) || 'No further details provided.';
+    const collapseBody = document.createElement('div');
+    collapseBody.className = 'accordion-body';
+
+    const description = document.createElement('p');
+    description.dataset.description = '';
+    description.textContent = truncate(issue.body, 200) || 'No further details provided.';
 
     const timestamp = document.createElement('p');
-    timestamp.className = 'card-text text small mb-0 opacity-75';
-    if (isUpdate) {
-      // Planned/informational update: show when, never a duration — it
-      // wasn't measured downtime, just a note that stayed open a while.
-      timestamp.textContent = issue.state === 'closed' && issue.closed_at
-        ? `Resolved ${formatTimestamp(issue.closed_at)}`
-        : `Opened ${formatTimestamp(issue.created_at)}`;
-    } else if (issue.state === 'closed' && issue.closed_at) {
-      const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
-      timestamp.textContent = `Down for ${duration} — resolved ${formatTimestamp(issue.closed_at)}`;
-    } else {
-      timestamp.textContent = `Down since ${formatTimestamp(issue.created_at)}`;
-    }
+    timestamp.className = 'small opacity-75 mb-0';
+    timestamp.textContent = timestampText(issue, isUpdate);
 
-    body.append(header, excerpt, timestamp);
-    item.appendChild(body);
-    list.appendChild(item);
+    collapseBody.append(description, timestamp);
+    collapse.appendChild(collapseBody);
+
+    item.append(header, collapse);
+    accordion.appendChild(item);
   }
 
   section.classList.remove('d-none');
 }
 
+// Event delegation: one listener for the whole accordion, rather than one
+// per item. Fires each time any item is expanded; only fetches the closing
+// comment the first time a given closed issue is opened.
+function initRecentUpdatesAccordion() {
+  const accordion = document.getElementById('recent-updates-accordion');
+  accordion.addEventListener('shown.bs.collapse', async (event) => {
+    const item = event.target.closest('.accordion-item');
+    if (!item || item.dataset.issueState !== 'closed') return;
+
+    const issueNumber = Number(item.dataset.issueNumber);
+    if (!closingCommentCache.has(issueNumber)) {
+      closingCommentCache.set(issueNumber, await fetchClosingComment(issueNumber));
+    }
+    const comment = closingCommentCache.get(issueNumber);
+    if (!comment) return;
+
+    const body = event.target.querySelector('.accordion-body');
+    if (!body || body.querySelector('[data-closing-comment]')) return;
+
+    const resolution = document.createElement('p');
+    resolution.dataset.closingComment = '';
+    resolution.textContent = `Resolution: ${truncate(comment, 300)}`;
+    body.querySelector('[data-description]').after(resolution);
+  });
+}
+
 function initRecentUpdates(recentIssues) {
   cachedRecentIssues = recentIssues;
+  initRecentUpdatesAccordion();
   const select = document.getElementById('recent-updates-count');
   renderRecentUpdates(Number(select.value));
   select.addEventListener('change', () => renderRecentUpdates(Number(select.value)));
