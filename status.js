@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.1.0';
+const STATUS_PAGE_VERSION = 'v1.2.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.

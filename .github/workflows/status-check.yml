@@ -56,11 +56,35 @@ jobs:
               fi
             else
               if [[ -z "$existing" ]]; then
-                gh issue create --repo "$GH_REPO" \
-                  --title "$key is unreachable" \
-                  --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
-                  --label "$label" --label auto-outage
-                echo "Opened new issue for $key"
+                # A planned-maintenance issue (app label + "update") can
+                # declare a Maintenance-Start/Maintenance-End window (NZ
+                # time) in its body; if now falls inside it, the app being
+                # down is expected, so skip creating an outage issue.
+                maintenance_body=$(gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
+                  --json body --jq '(.[0].body // "")')
+
+                start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1)
+                end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1)
+
+                in_window=false
+                if [[ -n "$start_str" && -n "$end_str" ]]; then
+                  start_epoch=$(TZ='Pacific/Auckland' date -d "$start_str" +%s 2>/dev/null || echo "")
+                  end_epoch=$(TZ='Pacific/Auckland' date -d "$end_str" +%s 2>/dev/null || echo "")
+                  now_epoch=$(date -u +%s)
+                  if [[ -n "$start_epoch" && -n "$end_epoch" && "$now_epoch" -ge "$start_epoch" && "$now_epoch" -le "$end_epoch" ]]; then
+                    in_window=true
+                  fi
+                fi
+
+                if [[ "$in_window" == true ]]; then
+                  echo "$key is down but within an announced maintenance window, skipping"
+                else
+                  gh issue create --repo "$GH_REPO" \
+                    --title "$key is unreachable" \
+                    --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
+                    --label "$label" --label auto-outage
+                  echo "Opened new issue for $key"
+                fi
               else
                 echo "Issue #$existing already open for $key, skipping"
               fi
