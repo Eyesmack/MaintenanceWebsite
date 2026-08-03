@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.2.0';
+const STATUS_PAGE_VERSION = 'v1.3.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -44,6 +44,7 @@ async function checkApp(url) {
 async function fetchAppIssues(appNames) {
   const issuesByApp = {};
   const recentIssues = [];
+  const hasOpenAutoOutage = {};
   try {
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
@@ -66,12 +67,15 @@ async function fetchAppIssues(appNames) {
       recentIssues.push({ app: appName, issue, isUpdate });
       if (issue.state === 'open') {
         (issuesByApp[appName] ||= []).push(issue);
+        if (labels.includes('auto-outage')) {
+          hasOpenAutoOutage[appName] = true;
+        }
       }
     }
   } catch (err) {
     console.warn('Could not fetch status-update issues from GitHub', err);
   }
-  return { issuesByApp, recentIssues };
+  return { issuesByApp, recentIssues, hasOpenAutoOutage };
 }
 
 function truncate(text, max) {
@@ -270,7 +274,7 @@ async function init() {
   const cols = renderStatusCards(apps);
   const appNames = Object.keys(apps);
 
-  const [reachability, { issuesByApp, recentIssues }] = await Promise.all([
+  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage }] = await Promise.all([
     Promise.all(
       appNames.map(async (app) => {
         const online = await checkApp(apps[app]);
@@ -282,14 +286,22 @@ async function init() {
 
   const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
 
+  // A no-cors browser probe can't see HTTP error statuses (e.g. 502) — it
+  // only detects total network failure. The workflow's auto-outage issue
+  // (based on a real status check) closes that gap: if one's open, treat
+  // the app as offline regardless of what the probe saw.
+  const correctedOnlineByApp = Object.fromEntries(
+    appNames.map((app) => [app, onlineByApp[app] && !hasOpenAutoOutage[app]])
+  );
+
   appNames.forEach((app) => {
-    const online = onlineByApp[app];
+    const online = correctedOnlineByApp[app];
     const issues = issuesByApp[app];
     setBadge(cols[app], online, Boolean(issues && issues.length));
     setMessage(cols[app], online, issues);
   });
 
-  updateHeading(reachability.map(({ online }) => online));
+  updateHeading(appNames.map((app) => correctedOnlineByApp[app]));
   initRecentUpdates(recentIssues);
 
   document.getElementById('last-updated').textContent =
