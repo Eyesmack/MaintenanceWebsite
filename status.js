@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.4.1';
+const STATUS_PAGE_VERSION = 'v1.4.2';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -323,10 +323,12 @@ function renderRecentUpdates(count) {
     titleText.textContent = `${app}: ${issue.title}`;
 
     const stateBadge = document.createElement('span');
-    if (isUpdate) {
+    if (isUpdate && issue.state === 'open') {
       stateBadge.className = 'badge bg-info me-2';
       stateBadge.textContent = 'Planned';
     } else {
+      // A closed planned-maintenance issue is just Resolved, same as any
+      // other closed issue — "Planned" only makes sense while it's open.
       stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
       stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
     }
