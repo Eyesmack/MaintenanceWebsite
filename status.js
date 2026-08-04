@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.4';
+const STATUS_PAGE_VERSION = 'v1.7.5';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -271,8 +271,18 @@ function createStatusCard(app) {
   uptimeHistory.style.height = '18px';
   uptimeHistory.dataset.uptimeHistory = '';
 
-  body.append(title, message, uptimeRow, uptimeHistoryLabel, uptimeHistory);
-  card.appendChild(body);
+  body.append(title, message);
+
+  // A card-footer (not just another card-body child) so it sits pinned to
+  // the bottom of the card regardless of how tall the message above it
+  // is — .card is already a flex column and .card-body already grows to
+  // fill the remaining space, so a following .card-footer naturally lands
+  // at the bottom. Same pattern already used for the page's own footer.
+  const cardFooter = document.createElement('div');
+  cardFooter.className = 'card-footer';
+  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory);
+
+  card.append(body, cardFooter);
   col.appendChild(card);
   return col;
 }
