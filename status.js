@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.5.1';
+const STATUS_PAGE_VERSION = 'v1.6.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -470,7 +470,7 @@ function renderRecentUpdates(count) {
     collapseBody.className = 'accordion-body';
 
     const affectedApps = document.createElement('p');
-    affectedApps.className = 'small mb-2';
+    affectedApps.className = 'small opacity-75 mb-2';
     affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
 
     const description = document.createElement('p');

@@ -27,10 +27,35 @@ jobs:
         run: |
           set -uo pipefail
 
+          # Consecutive failed checks required before an outage issue gets
+          # filed — checks run every 1 minute, so a single blip shouldn't
+          # alert. State (per-app consecutive-failure counts) has to live
+          # somewhere across runs since each run starts fresh; rather than
+          # Actions cache or committing a state file, this reuses the same
+          # "GitHub Issues as the datastore" pattern as the rest of this
+          # workflow: one hidden issue holds a JSON blob of counters. It
+          # never carries an app-name label, so status.js never surfaces it.
+          FAILURE_THRESHOLD=2
+          STATE_LABEL="status-check-state"
+
           # auto-outage marks issues this workflow owns, so it never touches
           # manually-filed maintenance issues (which carry only the app label).
           gh label create auto-outage --color d73a4a \
             --description "Automatically opened by the status-check workflow" --force >/dev/null 2>&1 || true
+          gh label create "$STATE_LABEL" --color 6a737d \
+            --description "Internal bookkeeping for the status-check workflow — do not edit" --force >/dev/null 2>&1 || true
+
+          state_issue_number=$(gh issue list --repo "$GH_REPO" --label "$STATE_LABEL" --state open \
+            --json number --jq '(.[0].number // "")')
+          if [[ -z "$state_issue_number" ]]; then
+            state_issue_url=$(gh issue create --repo "$GH_REPO" \
+              --title "Status Check Internal State (auto-managed — do not edit)" \
+              --body '{}' --label "$STATE_LABEL")
+            state_issue_number=$(basename "$state_issue_url")
+          fi
+
+          state_json=$(gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")')
+          echo "$state_json" | jq empty >/dev/null 2>&1 || state_json='{}'
 
           while IFS=$'\t' read -r key url; do
             # Labels are always lowercase regardless of how apps.json
@@ -49,47 +74,64 @@ jobs:
               --json number --jq '(.[0].number // "")')
 
             if [[ "$status" =~ ^[23][0-9][0-9]$ ]]; then
+              # Any successful check resets the consecutive-failure streak,
+              # so a future outage needs FAILURE_THRESHOLD fresh failures
+              # again rather than picking up an old count.
+              state_json=$(echo "$state_json" | jq --arg k "$label" '.[$k] = 0')
+
               if [[ -n "$existing" ]]; then
                 gh issue close "$existing" --repo "$GH_REPO" \
                   --comment "Recovered — $key responded with HTTP $status at $(date -u +'%Y-%m-%d %H:%M UTC')."
                 echo "Closed issue #$existing for $key (recovered)"
               fi
             else
-              if [[ -z "$existing" ]]; then
-                # A planned-maintenance issue (app label + "update") can
-                # declare a Maintenance-Start/Maintenance-End window (NZ
-                # time) in its body; if now falls inside it, the app being
-                # down is expected, so skip creating an outage issue.
-                maintenance_body=$(gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
-                  --json body --jq '(.[0].body // "")')
+              if [[ -n "$existing" ]]; then
+                echo "Issue #$existing already open for $key, skipping"
+              else
+                fail_count=$(echo "$state_json" | jq -r --arg k "$label" '(.[$k] // 0) + 1')
+                state_json=$(echo "$state_json" | jq --arg k "$label" --argjson c "$fail_count" '.[$k] = $c')
 
-                # grep exits 1 when there's no match (the normal case when
-                # no maintenance window is declared) — with pipefail + the
-                # shell's own -e, that would otherwise kill the whole job.
-                start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
-                end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+                if (( fail_count < FAILURE_THRESHOLD )); then
+                  echo "$key down ($fail_count/$FAILURE_THRESHOLD consecutive failures) — not yet confirmed"
+                else
+                  # A planned-maintenance issue (app label + "update") can
+                  # declare a Maintenance-Start/Maintenance-End window (NZ
+                  # time) in its body; if now falls inside it, the app being
+                  # down is expected, so skip creating an outage issue.
+                  maintenance_body=$(gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
+                    --json body --jq '(.[0].body // "")')
 
-                in_window=false
-                if [[ -n "$start_str" && -n "$end_str" ]]; then
-                  start_epoch=$(TZ='Pacific/Auckland' date -d "$start_str" +%s 2>/dev/null || echo "")
-                  end_epoch=$(TZ='Pacific/Auckland' date -d "$end_str" +%s 2>/dev/null || echo "")
-                  now_epoch=$(date -u +%s)
-                  if [[ -n "$start_epoch" && -n "$end_epoch" && "$now_epoch" -ge "$start_epoch" && "$now_epoch" -le "$end_epoch" ]]; then
-                    in_window=true
+                  # grep exits 1 when there's no match (the normal case when
+                  # no maintenance window is declared) — with pipefail + the
+                  # shell's own -e, that would otherwise kill the whole job.
+                  start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+                  end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+
+                  in_window=false
+                  if [[ -n "$start_str" && -n "$end_str" ]]; then
+                    start_epoch=$(TZ='Pacific/Auckland' date -d "$start_str" +%s 2>/dev/null || echo "")
+                    end_epoch=$(TZ='Pacific/Auckland' date -d "$end_str" +%s 2>/dev/null || echo "")
+                    now_epoch=$(date -u +%s)
+                    if [[ -n "$start_epoch" && -n "$end_epoch" && "$now_epoch" -ge "$start_epoch" && "$now_epoch" -le "$end_epoch" ]]; then
+                      in_window=true
+                    fi
+                  fi
+
+                  if [[ "$in_window" == true ]]; then
+                    echo "$key is down but within an announced maintenance window, skipping"
+                  else
+                    gh issue create --repo "$GH_REPO" \
+                      --title "$key is unreachable" \
+                      --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
+                      --label "$label" --label auto-outage
+                    echo "Opened new issue for $key"
                   fi
                 fi
-
-                if [[ "$in_window" == true ]]; then
-                  echo "$key is down but within an announced maintenance window, skipping"
-                else
-                  gh issue create --repo "$GH_REPO" \
-                    --title "$key is unreachable" \
-                    --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
-                    --label "$label" --label auto-outage
-                  echo "Opened new issue for $key"
-                fi
-              else
-                echo "Issue #$existing already open for $key, skipping"
               fi
             fi
           done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' apps.json)
+
+          # Process substitution (< <(...)) runs the while loop in this same
+          # shell, not a subshell, so state_json's accumulated updates are
+          # still here — write them back once, rather than on every app.
+          gh issue edit "$state_issue_number" --repo "$GH_REPO" --body "$state_json"
