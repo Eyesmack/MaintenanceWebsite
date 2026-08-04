@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.0';
+const STATUS_PAGE_VERSION = 'v1.7.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -30,7 +30,7 @@ const UPTIME_TIMEFRAMES = {
 
 // The history bar's length is fixed and independent of the Uptime %
 // selector above (same convention most status pages use).
-const UPTIME_HISTORY_DAYS = 90;
+const UPTIME_HISTORY_DAYS = 7;
 
 // no-cors mode can't read the HTTP status (opaque response), so a
 // resolved fetch only proves the host is reachable, not that the app
