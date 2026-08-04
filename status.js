@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.3';
+const STATUS_PAGE_VERSION = 'v1.7.4';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -30,7 +30,7 @@ const UPTIME_TIMEFRAMES = {
 
 // The history bar's length is fixed and independent of the Uptime %
 // selector above (same convention most status pages use).
-var UPTIME_HISTORY_DAYS = 30;
+const UPTIME_HISTORY_DAYS = 30;
 
 // no-cors mode can't read the HTTP status (opaque response), so a
 // resolved fetch only proves the host is reachable, not that the app
@@ -262,12 +262,16 @@ function createStatusCard(app) {
 
   uptimeRow.append(uptimeText, uptimeSelect);
 
+  const uptimeHistoryLabel = document.createElement('p');
+  uptimeHistoryLabel.className = 'small text mb-1 mt-2';
+  uptimeHistoryLabel.textContent = 'Uptime History';
+
   const uptimeHistory = document.createElement('div');
-  uptimeHistory.className = 'd-flex gap-1 mt-2';
+  uptimeHistory.className = 'd-flex gap-1';
   uptimeHistory.style.height = '18px';
   uptimeHistory.dataset.uptimeHistory = '';
 
-  body.append(title, message, uptimeRow, uptimeHistory);
+  body.append(title, message, uptimeRow, uptimeHistoryLabel, uptimeHistory);
   card.appendChild(body);
   col.appendChild(card);
   return col;
@@ -339,6 +343,7 @@ function renderUptimeHistory(app) {
 
     const day = document.createElement('div');
     day.className = 'flex-fill rounded-1';
+    day.setAttribute('data-bs-toggle', 'tooltip');
 
     if (dayStart < monitoringStart) {
       day.classList.add('bg-secondary');
@@ -351,6 +356,11 @@ function renderUptimeHistory(app) {
 
     container.appendChild(day);
   }
+
+  // Bootstrap tooltips are opt-in — each trigger element needs its own
+  // instance. Its Tooltip JS takes over the `title` attribute (removing it
+  // from native-tooltip duty) once initialized.
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
 }
 
 function formatTimestamp(iso) {
