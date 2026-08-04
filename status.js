@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.2';
+const STATUS_PAGE_VERSION = 'v1.6.3';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -363,15 +363,23 @@ function calculateUptimePercent(issues, windowStart, windowEnd) {
 
 function timestampText(issue, isUpdate) {
   if (isUpdate) {
-    // Planned/informational update: show when, never a duration — it
-    // wasn't measured downtime, just a note that stayed open a while.
-    return issue.state === 'closed' && issue.closed_at
-      ? `Resolved ${formatTimestamp(issue.closed_at)}`
+    if (issue.state === 'closed' && issue.closed_at) {
+      // Closed planned maintenance: this is factual completion info, not
+      // a prediction, so it stays as-is.
+      return `Resolved ${formatTimestamp(issue.closed_at)}`;
+    }
+    // Still open: show when the outage is actually expected (parsed from
+    // the same Maintenance-Start convention the workflow itself uses),
+    // not when this GitHub issue happened to be filed. Falls back to the
+    // filing time if the body doesn't declare a parseable window.
+    const window = extractMaintenanceWindow(issue.body);
+    return window
+      ? `Expected Outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
   if (issue.state === 'closed' && issue.closed_at) {
     const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
-    return `Down for ${duration} — resolved ${formatTimestamp(issue.closed_at)}`;
+    return `Down for ${duration} — Resolved ${formatTimestamp(issue.closed_at)}`;
   }
   return `Down since ${formatTimestamp(issue.created_at)}`;
 }
@@ -381,11 +389,15 @@ function timestampText(issue, isUpdate) {
 // without needing to expand the item first.
 function shortTimestampText(issue, isUpdate) {
   if (issue.state === 'closed' && issue.closed_at) {
-    return `resolved ${formatTimestamp(issue.closed_at)}`;
+    return `Resolved ${formatTimestamp(issue.closed_at)}`;
   }
-  return isUpdate
-    ? `opened ${formatTimestamp(issue.created_at)}`
-    : `down since ${formatTimestamp(issue.created_at)}`;
+  if (isUpdate) {
+    const window = extractMaintenanceWindow(issue.body);
+    return window
+      ? `Expected outage: ${formatTimestamp(window.start)}`
+      : `Opened ${formatTimestamp(issue.created_at)}`;
+  }
+  return `Down since ${formatTimestamp(issue.created_at)}`;
 }
 
 // A closed issue's "closing comment" isn't a distinct GitHub field — it's
@@ -446,7 +458,7 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = `${issue.title} - ${shortTimestampText(issue, isUpdate)}`;
+    titleText.textContent = `${issue.title} - <span class="opacity-75">${shortTimestampText(issue, isUpdate)}</span>`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
