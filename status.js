@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.6';
+const STATUS_PAGE_VERSION = 'v1.7.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -27,6 +27,10 @@ const UPTIME_TIMEFRAMES = {
   '1y': { label: '1 Year', ms: 365 * 24 * 60 * 60 * 1000 },
   all: { label: 'All Time', ms: null },
 };
+
+// The history bar's length is fixed and independent of the Uptime %
+// selector above (same convention most status pages use).
+const UPTIME_HISTORY_DAYS = 90;
 
 // no-cors mode can't read the HTTP status (opaque response), so a
 // resolved fetch only proves the host is reachable, not that the app
@@ -258,7 +262,12 @@ function createStatusCard(app) {
 
   uptimeRow.append(uptimeText, uptimeSelect);
 
-  body.append(title, message, uptimeRow);
+  const uptimeHistory = document.createElement('div');
+  uptimeHistory.className = 'd-flex gap-1 mt-2';
+  uptimeHistory.style.height = '18px';
+  uptimeHistory.dataset.uptimeHistory = '';
+
+  body.append(title, message, uptimeRow, uptimeHistory);
   card.appendChild(body);
   col.appendChild(card);
   return col;
@@ -303,6 +312,45 @@ function initUptimeSelectors() {
     if (!event.target.matches('[data-uptime-select]')) return;
     renderUptime(event.target.dataset.app);
   });
+}
+
+// Fixed-length day-by-day history strip, independent of the timeframe
+// selector above — same convention as most status pages (Upptime,
+// UptimeRobot, Cachet). Reuses calculateUptimePercent per day rather than
+// duplicating the downtime math.
+function renderUptimeHistory(app) {
+  const container = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime-history]`);
+  if (!container) return;
+
+  const issues = cachedDownEventsByApp[app] || [];
+  const monitoringStart = new Date(MONITORING_START_DATE);
+  const now = new Date();
+
+  container.innerHTML = '';
+  for (let i = UPTIME_HISTORY_DAYS - 1; i >= 0; i--) {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    dayStart.setDate(dayStart.getDate() - i);
+    // Clamp today's bucket to the real current time — otherwise a still-
+    // open issue (whose down-period defaults to whatever windowEnd is
+    // passed in) would look like it extends all the way to midnight
+    // tonight, i.e. into the future.
+    const dayEnd = new Date(Math.min(dayStart.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
+
+    const day = document.createElement('div');
+    day.className = 'flex-fill rounded-1';
+
+    if (dayStart < monitoringStart) {
+      day.classList.add('bg-secondary');
+      day.title = `${dayStart.toLocaleDateString()} — No data (before monitoring began)`;
+    } else {
+      const percent = calculateUptimePercent(issues, dayStart, dayEnd);
+      day.classList.add(percent === 100 ? 'bg-success' : 'bg-danger');
+      day.title = `${dayStart.toLocaleDateString()} — ${percent.toFixed(2)}% uptime`;
+    }
+
+    container.appendChild(day);
+  }
 }
 
 function formatTimestamp(iso) {
@@ -597,6 +645,7 @@ async function init() {
     setBadge(cols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
     setMessage(cols[app], online, issues);
     renderUptime(app);
+    renderUptimeHistory(app);
   });
 
   initUptimeSelectors();
