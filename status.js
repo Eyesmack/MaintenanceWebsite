@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.5';
+const STATUS_PAGE_VERSION = 'v1.6.6';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -189,7 +189,7 @@ function setMessage(col, online, issues) {
   }
 
   message.textContent = online
-    ? 'This service is reachable and has no known issues.'
+    ? 'This service is reachable and has no known issues or planned maintenance.'
     : 'This service could not be reached. It may be down, or blocking status checks from your network.';
 }
 
@@ -339,8 +339,14 @@ function calculateUptimePercent(issues, windowStart, windowEnd) {
 
   const intervals = issues
     .map((issue) => {
-      const start = new Date(issue.created_at);
-      const end = issue.closed_at ? new Date(issue.closed_at) : windowEnd;
+      // Planned-maintenance issues get filed ahead of time — the down
+      // period is the declared Maintenance-Start/End window, not when the
+      // heads-up notice happened to be created. Real incidents never have
+      // a parseable window, so this falls through to created_at/closed_at
+      // for them exactly as before.
+      const window = extractMaintenanceWindow(issue.body);
+      const start = window ? window.start : new Date(issue.created_at);
+      const end = window ? window.end : (issue.closed_at ? new Date(issue.closed_at) : windowEnd);
       return [Math.max(start, windowStart), Math.min(end, windowEnd)];
     })
     .filter(([start, end]) => end > start)
