@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.3';
+const STATUS_PAGE_VERSION = 'v1.6.4';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -458,7 +458,10 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = `${issue.title} - <span class="opacity-75">${shortTimestampText(issue, isUpdate)}</span>`;
+    titleText.textContent = `${issue.title} - `;
+    const titleDate = document.createElement('span');
+    titleDate.className = 'opacity-75';
+    titleDate.textContent = `${shortTimestampText(issue, isUpdate)}`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
@@ -470,7 +473,7 @@ function renderRecentUpdates(count) {
       stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
       stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
     }
-    titleWrap.append(titleText, stateBadge);
+    titleWrap.append(titleText, titleDate, stateBadge);
     button.appendChild(titleWrap);
 
     const issueLink = document.createElement('a');
