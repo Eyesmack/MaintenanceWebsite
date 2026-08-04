@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.7';
+const STATUS_PAGE_VERSION = 'v1.7.8';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -264,7 +264,7 @@ function createStatusCard(app) {
 
   const uptimeHistoryLabel = document.createElement('p');
   uptimeHistoryLabel.className = 'small text mb-1 mt-2';
-  uptimeHistoryLabel.textContent = 'Uptime History';
+  uptimeHistoryLabel.textContent = 'Uptime History (Last 30 Days)';
 
   const uptimeHistory = document.createElement('div');
   uptimeHistory.className = 'd-flex gap-1';
