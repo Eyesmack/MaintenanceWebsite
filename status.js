@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.5';
+const STATUS_PAGE_VERSION = 'v1.7.6';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -224,7 +224,7 @@ function createStatusCard(app) {
   const card = document.createElement('div');
   card.className = 'card sub-card h-100 text-center';
   const body = document.createElement('div');
-  body.className = 'card-body';
+  body.className = 'card-body pb-0';
 
   const title = document.createElement('h5');
   title.className = 'card-title text';
@@ -279,7 +279,7 @@ function createStatusCard(app) {
   // fill the remaining space, so a following .card-footer naturally lands
   // at the bottom. Same pattern already used for the page's own footer.
   const cardFooter = document.createElement('div');
-  cardFooter.className = 'card-footer';
+  cardFooter.className = 'card-footer border-top-0 pt-0';
   cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory);
 
   card.append(body, cardFooter);
