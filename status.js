@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.0';
+const STATUS_PAGE_VERSION = 'v1.6.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -376,6 +376,18 @@ function timestampText(issue, isUpdate) {
   return `Down since ${formatTimestamp(issue.created_at)}`;
 }
 
+// A compact one-line version of timestampText for the accordion header —
+// drops the duration ("Down for Xh Ym —") so it fits alongside the title
+// without needing to expand the item first.
+function shortTimestampText(issue, isUpdate) {
+  if (issue.state === 'closed' && issue.closed_at) {
+    return `resolved ${formatTimestamp(issue.closed_at)}`;
+  }
+  return isUpdate
+    ? `opened ${formatTimestamp(issue.created_at)}`
+    : `down since ${formatTimestamp(issue.created_at)}`;
+}
+
 // A closed issue's "closing comment" isn't a distinct GitHub field — it's
 // just the last comment on the issue (what the workflow posts via
 // `--comment` when auto-closing an outage, or whatever's left when closing
@@ -434,7 +446,7 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = issue.title;
+    titleText.textContent = `${issue.title} - last update: ${shortTimestampText(issue, isUpdate)}`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
