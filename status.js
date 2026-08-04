@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.6.1';
+const STATUS_PAGE_VERSION = 'v1.6.2';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -446,7 +446,7 @@ function renderRecentUpdates(count) {
     const titleWrap = document.createElement('span');
     titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
     const titleText = document.createElement('span');
-    titleText.textContent = `${issue.title} - last update: ${shortTimestampText(issue, isUpdate)}`;
+    titleText.textContent = `${issue.title} - ${shortTimestampText(issue, isUpdate)}`;
 
     const stateBadge = document.createElement('span');
     if (isUpdate && issue.state === 'open') {
