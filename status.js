@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.2';
+const STATUS_PAGE_VERSION = 'v1.7.3';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -18,7 +18,7 @@ const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
 // Set this to when you actually started using this status page — "All
 // Time" uptime is measured from here, since there's no real
 // monitoring-start record to derive it from automatically.
-const MONITORING_START_DATE = '2026-08-02T00:00:00Z';
+const MONITORING_START_DATE = '2026-07-01T00:00:00Z';
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -30,7 +30,7 @@ const UPTIME_TIMEFRAMES = {
 
 // The history bar's length is fixed and independent of the Uptime %
 // selector above (same convention most status pages use).
-var UPTIME_HISTORY_DAYS = 7;
+var UPTIME_HISTORY_DAYS = 30;
 
 // no-cors mode can't read the HTTP status (opaque response), so a
 // resolved fetch only proves the host is reachable, not that the app
@@ -654,6 +654,8 @@ async function init() {
 
   document.getElementById('last-updated').textContent =
     `Last updated: ${formatTimestamp(new Date())} · ${STATUS_PAGE_VERSION}`;
+  document.getElementById('version-text').textContent =
+  `${STATUS_PAGE_VERSION}`;
 }
 
 init();
