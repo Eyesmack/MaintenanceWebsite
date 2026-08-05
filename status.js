@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.8.0';
+const STATUS_PAGE_VERSION = 'v1.9.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -531,13 +531,13 @@ function renderRecentUpdates(count) {
   }
 
   accordion.innerHTML = '';
-  for (const { apps, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
+  const toRender = cachedRecentIssues.slice(0, count);
+  for (const { apps, issue, isUpdate } of toRender) {
     const collapseId = `ru-collapse-${issue.number}`;
 
     const item = document.createElement('div');
     item.className = 'accordion-item';
     item.dataset.issueNumber = String(issue.number);
-    item.dataset.issueState = issue.state;
 
     // A flex row: the toggle button (still the only click target for
     // expand/collapse) plus a separate link icon after it. The link can't
@@ -617,38 +617,40 @@ function renderRecentUpdates(count) {
   }
 
   section.classList.remove('d-none');
+  preloadClosingComments(toRender);
 }
 
-// Event delegation: one listener for the whole accordion, rather than one
-// per item. Fires each time any item is expanded; only fetches the closing
-// comment the first time a given closed issue is opened.
-function initRecentUpdatesAccordion() {
+// Fetches closing comments for every closed issue currently rendered, in
+// parallel, and injects each into its accordion item as soon as it
+// resolves — rather than waiting for the user to expand that item.
+// closingCommentCache dedupes across calls, so switching the Recent
+// Updates count back and forth never re-fetches an issue already loaded.
+async function preloadClosingComments(issues) {
   const accordion = document.getElementById('recent-updates-accordion');
-  accordion.addEventListener('shown.bs.collapse', async (event) => {
-    const item = event.target.closest('.accordion-item');
-    if (!item || item.dataset.issueState !== 'closed') return;
+  await Promise.all(
+    issues
+      .filter(({ issue }) => issue.state === 'closed')
+      .map(async ({ issue }) => {
+        if (!closingCommentCache.has(issue.number)) {
+          closingCommentCache.set(issue.number, await fetchClosingComment(issue.number));
+        }
+        const comment = closingCommentCache.get(issue.number);
+        if (!comment) return;
 
-    const issueNumber = Number(item.dataset.issueNumber);
-    if (!closingCommentCache.has(issueNumber)) {
-      closingCommentCache.set(issueNumber, await fetchClosingComment(issueNumber));
-    }
-    const comment = closingCommentCache.get(issueNumber);
-    if (!comment) return;
+        const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
+        if (!body || body.querySelector('[data-closing-comment]')) return;
 
-    const body = event.target.querySelector('.accordion-body');
-    if (!body || body.querySelector('[data-closing-comment]')) return;
-
-    const resolution = document.createElement('p');
-    resolution.dataset.closingComment = '';
-    resolution.className = 'preserve-lines';
-    resolution.textContent = `Closing Comment: ${truncate(comment, 300)}`;
-    body.querySelector('[data-description]').after(resolution);
-  });
+        const resolution = document.createElement('p');
+        resolution.dataset.closingComment = '';
+        resolution.className = 'preserve-lines';
+        resolution.textContent = `Closing Comment: ${truncate(comment, 300)}`;
+        body.querySelector('[data-description]').after(resolution);
+      })
+  );
 }
 
 function initRecentUpdates(recentIssues) {
   cachedRecentIssues = recentIssues;
-  initRecentUpdatesAccordion();
   const select = document.getElementById('recent-updates-count');
   renderRecentUpdates(Number(select.value));
   select.addEventListener('change', () => renderRecentUpdates(Number(select.value)));
