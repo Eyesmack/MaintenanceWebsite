@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.10';
+const STATUS_PAGE_VERSION = 'v1.7.11';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -247,20 +247,7 @@ function createStatusCard(app) {
   uptimeText.dataset.uptime = '';
   uptimeText.textContent = 'Calculating…';
 
-  const uptimeSelect = document.createElement('select');
-  uptimeSelect.className = 'form-select form-select-sm';
-  uptimeSelect.style.width = 'auto';
-  uptimeSelect.dataset.uptimeSelect = '';
-  uptimeSelect.dataset.app = app;
-  for (const [key, { label }] of Object.entries(UPTIME_TIMEFRAMES)) {
-    const option = document.createElement('option');
-    option.value = key;
-    option.textContent = label;
-    if (key === '24h') option.selected = true;
-    uptimeSelect.appendChild(option);
-  }
-
-  uptimeRow.append(uptimeText, uptimeSelect);
+  uptimeRow.append(uptimeText);
 
   const uptimeHistoryLabel = document.createElement('p');
   uptimeHistoryLabel.className = 'small text mb-1 mt-2';
@@ -299,6 +286,33 @@ function renderStatusCards(apps) {
   return cols;
 }
 
+// One shared timeframe selector for every card, instead of one per card —
+// the same options apply uniformly to all apps, so there's no need to
+// repeat the control five times.
+function createUptimeTimeframeSelector() {
+  const row = document.getElementById('uptime-timeframe-row');
+  if (!row) return;
+
+  const label = document.createElement('label');
+  label.htmlFor = 'uptime-timeframe-select';
+  label.className = 'small text mb-0';
+  label.textContent = 'Uptime Timeframe:';
+
+  const select = document.createElement('select');
+  select.id = 'uptime-timeframe-select';
+  select.className = 'form-select form-select-sm';
+  select.style.width = 'auto';
+  for (const [key, { label: optionLabel }] of Object.entries(UPTIME_TIMEFRAMES)) {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = optionLabel;
+    if (key === '24h') option.selected = true;
+    select.appendChild(option);
+  }
+
+  row.append(label, select);
+}
+
 // Caches the full (open + closed) matched issue list so the "Last 5 /
 // Last 10" selector can re-render instantly without re-fetching.
 let cachedRecentIssues = [];
@@ -307,8 +321,14 @@ let cachedRecentIssues = [];
 // recompute instantly without re-fetching.
 let cachedDownEventsByApp = {};
 
+// All app names, cached so the shared timeframe selector's change handler
+// can update every card — Object.keys(cachedDownEventsByApp) alone isn't
+// reliable for this since an app with zero matched issues ever never gets
+// a key in that map at all.
+let cachedAppNames = [];
+
 function renderUptime(app) {
-  const select = document.querySelector(`[data-uptime-select][data-app="${app}"]`);
+  const select = document.getElementById('uptime-timeframe-select');
   const text = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime]`);
   if (!select || !text) return;
 
@@ -319,12 +339,11 @@ function renderUptime(app) {
   text.textContent = `${percent.toFixed(2)}% uptime (${label})`;
 }
 
-// One delegated listener for every card's uptime selector, rather than one
-// per card — recomputes from the cached issue history, no re-fetch.
-function initUptimeSelectors() {
-  document.getElementById('status-cards').addEventListener('change', (event) => {
-    if (!event.target.matches('[data-uptime-select]')) return;
-    renderUptime(event.target.dataset.app);
+// One listener on the single shared selector, rather than one per card —
+// recomputes every app from the cached issue history, no re-fetch.
+function initUptimeTimeframeSelector() {
+  document.getElementById('uptime-timeframe-select')?.addEventListener('change', () => {
+    cachedAppNames.forEach((app) => renderUptime(app));
   });
 }
 
@@ -631,8 +650,10 @@ function initRecentUpdates(recentIssues) {
 
 async function init() {
   const apps = await loadApps();
+  createUptimeTimeframeSelector();
   const cols = renderStatusCards(apps);
   const appNames = Object.keys(apps);
+  cachedAppNames = appNames;
 
   const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }] = await Promise.all([
     Promise.all(
@@ -668,7 +689,7 @@ async function init() {
     renderUptimeHistory(app);
   });
 
-  initUptimeSelectors();
+  initUptimeTimeframeSelector();
   updateHeading(appNames.map((app) => correctedOnlineByApp[app]));
   initRecentUpdates(recentIssues);
 
