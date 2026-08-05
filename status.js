@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.7.11';
+const STATUS_PAGE_VERSION = 'v1.8.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -14,6 +14,12 @@ const CHECK_TIMEOUT_MS = 6000;
 // Open issues in this repo labeled with an app key (e.g. "notflix")
 // are treated as manual status updates and shown on that app's card.
 const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
+
+// A Cloudflare Worker (cloudflare/github-proxy-worker.js) proxies these
+// GitHub API reads so they can be authenticated (5,000 req/hour instead of
+// the unauthenticated 60/hour) without shipping a token to the browser —
+// the Worker holds it as a secret and adds it server-side.
+const GITHUB_PROXY_BASE = 'https://github-fetchissues.isaacma45.workers.dev';
 
 // Set this to when you actually started using this status page — "All
 // Time" uptime is measured from here, since there's no real
@@ -104,7 +110,7 @@ async function fetchAppIssues(appNames) {
   const downEventsByApp = {};
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
+      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
       { headers: { Accept: 'application/vnd.github+json' } }
     );
     if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
@@ -503,7 +509,7 @@ const closingCommentCache = new Map();
 async function fetchClosingComment(issueNumber) {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments`,
+      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments`,
       { headers: { Accept: 'application/vnd.github+json' } }
     );
     if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
