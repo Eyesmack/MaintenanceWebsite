@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Incident History | Isaac Mason</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-12 col-md-10 col-lg-8">
+          <div class="card home-card shadow-lg p-4 pt-0 text-center">
+            <div class="card-header">
+              <small><a href="index.html" class="version-text">&larr; Back to Status</a></small>
+            </div>
+            <div class="card-body">
+              <img src="logo.png" alt="Undiscovered Land Studios logo" class="logo-img mb-3">
+              <h1 class="text">Incident History</h1>
+              <p class="lead mb-4 text">Downtime totals and past incidents, by month.</p>
+
+              <p class="text" id="history-status">Loading incident history…</p>
+
+              <div class="table-responsive mb-4 d-none" id="monthly-summary-wrap">
+                <table class="table table-borderless text align-middle" id="monthly-summary">
+                  <thead>
+                    <tr id="monthly-summary-header"></tr>
+                  </thead>
+                  <tbody id="monthly-summary-body"></tbody>
+                </table>
+              </div>
+
+              <div id="incident-months" class="text-start"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+    <script src="common.js"></script>
+    <script src="history.js"></script>
+  </body>
+</html>
