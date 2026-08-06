@@ -1,6 +1,15 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.11.1';
+const STATUS_PAGE_VERSION = 'v1.12.0';
+
+// Captured once, before status.js ever changes it, so index.html's
+// <title> stays the single source of truth for the page's base title.
+const BASE_TITLE = document.title;
+
+// Matches the hex values behind Bootstrap's bg-success/bg-warning/bg-danger,
+// so the favicon dot's colors stay consistent with the card badges.
+const FAVICON_COLORS = { operational: '#198754', partial: '#ffc107', down: '#dc3545' };
+let faviconDataUrlCache = {};
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -184,15 +193,44 @@ function setMessage(col, online, issues) {
     : 'This service is currently unreachable according to automated checks.';
 }
 
-function updateHeading(onlineFlags) {
+function getOverallState(onlineFlags) {
+  const onlineCount = onlineFlags.filter(Boolean).length;
+  if (onlineCount === onlineFlags.length) return 'operational';
+  if (onlineCount === 0) return 'down';
+  return 'partial';
+}
+
+function buildFaviconDataUrl(color) {
+  if (faviconDataUrlCache[color]) return faviconDataUrlCache[color];
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(16, 16, 14, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  faviconDataUrlCache[color] = canvas.toDataURL('image/png');
+  return faviconDataUrlCache[color];
+}
+
+// The favicon dot always reflects the current state (a steady "still
+// green" signal), but the title is only prefixed for non-operational
+// states — reserved for "something needs your attention".
+function updateFaviconAndTitle(state) {
+  document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
+  const prefix = state === 'down' ? '🔴 ' : state === 'partial' ? '⚠️ ' : '';
+  document.title = `${prefix}${BASE_TITLE}`;
+}
+
+function updateHeading(state) {
   const heading = document.getElementById('status-heading');
   const subheading = document.getElementById('status-subheading');
-  const onlineCount = onlineFlags.filter(Boolean).length;
 
-  if (onlineCount === onlineFlags.length) {
+  if (state === 'operational') {
     heading.textContent = 'All Systems Operational';
     subheading.textContent = 'Everything is up and running normally.';
-  } else if (onlineCount === 0) {
+  } else if (state === 'down') {
     heading.textContent = "We'll be right back";
     subheading.textContent = "Everything appears to be down. I'm looking into it — thanks for your patience!";
   } else {
@@ -731,7 +769,9 @@ async function refreshAppStatus() {
     renderUptimeHistory(app);
   });
 
-  updateHeading(cachedAppNames.map((app) => onlineByApp[app]));
+  const state = getOverallState(cachedAppNames.map((app) => onlineByApp[app]));
+  updateHeading(state);
+  updateFaviconAndTitle(state);
   updateRecentUpdates(recentIssues);
 
   document.getElementById('last-updated').textContent =
