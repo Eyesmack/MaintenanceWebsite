@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.9.0';
+const STATUS_PAGE_VERSION = 'v1.10.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -499,25 +499,23 @@ function shortTimestampText(issue, isUpdate) {
   return `Down since ${formatTimestamp(issue.created_at)}`;
 }
 
-// A closed issue's "closing comment" isn't a distinct GitHub field — it's
-// just the last comment on the issue (what the workflow posts via
-// `--comment` when auto-closing an outage, or whatever's left when closing
-// one by hand). Cached per issue number so re-expanding an accordion item
-// never re-fetches.
-const closingCommentCache = new Map();
+// Comments are shown so the user can post live debugging updates on an
+// outage issue and have them appear here as they're added, not just a
+// final "closing comment". Cached per issue number so switching the
+// Recent Updates count back and forth never re-fetches.
+const issueCommentsCache = new Map();
 
-async function fetchClosingComment(issueNumber) {
+async function fetchIssueComments(issueNumber) {
   try {
     const res = await fetch(
-      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments`,
+      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments?per_page=100`,
       { headers: { Accept: 'application/vnd.github+json' } }
     );
     if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
-    const comments = await res.json();
-    return comments.length ? comments[comments.length - 1].body : null;
+    return res.json();
   } catch (err) {
-    console.warn(`Could not fetch closing comment for issue #${issueNumber}`, err);
-    return null;
+    console.warn(`Could not fetch comments for issue #${issueNumber}`, err);
+    return [];
   }
 }
 
@@ -617,35 +615,56 @@ function renderRecentUpdates(count) {
   }
 
   section.classList.remove('d-none');
-  preloadClosingComments(toRender);
+  preloadIssueComments(toRender);
 }
 
-// Fetches closing comments for every closed issue currently rendered, in
-// parallel, and injects each into its accordion item as soon as it
+// Fetches comments for every currently rendered issue (open or closed —
+// a debugging update can be posted at any point, not just when closing),
+// in parallel, and injects each issue's comment list as soon as it
 // resolves — rather than waiting for the user to expand that item.
-// closingCommentCache dedupes across calls, so switching the Recent
+// issueCommentsCache dedupes across calls, so switching the Recent
 // Updates count back and forth never re-fetches an issue already loaded.
-async function preloadClosingComments(issues) {
+async function preloadIssueComments(issues) {
   const accordion = document.getElementById('recent-updates-accordion');
   await Promise.all(
-    issues
-      .filter(({ issue }) => issue.state === 'closed')
-      .map(async ({ issue }) => {
-        if (!closingCommentCache.has(issue.number)) {
-          closingCommentCache.set(issue.number, await fetchClosingComment(issue.number));
-        }
-        const comment = closingCommentCache.get(issue.number);
-        if (!comment) return;
+    issues.map(async ({ issue }) => {
+      if (!issueCommentsCache.has(issue.number)) {
+        issueCommentsCache.set(issue.number, await fetchIssueComments(issue.number));
+      }
+      const comments = issueCommentsCache.get(issue.number);
+      if (!comments.length) return;
 
-        const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
-        if (!body || body.querySelector('[data-closing-comment]')) return;
+      const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
+      if (!body || body.querySelector('[data-comments]')) return;
 
-        const resolution = document.createElement('p');
-        resolution.dataset.closingComment = '';
-        resolution.className = 'preserve-lines';
-        resolution.textContent = `Closing Comment: ${truncate(comment, 300)}`;
-        body.querySelector('[data-description]').after(resolution);
-      })
+      const list = document.createElement('div');
+      list.dataset.comments = '';
+      list.className = 'mt-2';
+
+      const label = document.createElement('p');
+      label.className = 'small opacity-75 mb-1';
+      label.textContent = 'Updates:';
+      list.appendChild(label);
+
+      for (const comment of comments) {
+        const wrap = document.createElement('div');
+        wrap.className = 'mb-2';
+
+        const edited = comment.updated_at !== comment.created_at;
+        const meta = document.createElement('p');
+        meta.className = 'small opacity-75 mb-0';
+        meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
+
+        const commentBody = document.createElement('p');
+        commentBody.className = 'preserve-lines mb-0';
+        commentBody.textContent = comment.body;
+
+        wrap.append(meta, commentBody);
+        list.appendChild(wrap);
+      }
+
+      body.appendChild(list);
+    })
   );
 }
 
