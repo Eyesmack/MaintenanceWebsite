@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.12.0';
+const STATUS_PAGE_VERSION = 'v1.13.0';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -780,9 +780,31 @@ async function refreshAppStatus() {
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
+// Re-fetches the page's own live status.js (cache-busted) and compares its
+// STATUS_PAGE_VERSION to the one already running. Checking the live file
+// itself, rather than the repo/API, means this only ever reloads once a
+// new deploy is actually being served — no false positive during GitHub
+// Pages' own build/propagation lag right after a push.
+async function checkForNewVersion() {
+  try {
+    const res = await fetch(`status.js?v=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const text = await res.text();
+    const match = text.match(/const STATUS_PAGE_VERSION = '([^']+)'/);
+    if (match && match[1] !== STATUS_PAGE_VERSION) {
+      location.reload();
+      return true;
+    }
+  } catch {
+    // A fetch hiccup just means we try again next cycle.
+  }
+  return false;
+}
+
 // Reschedules only after the current refresh finishes, rather than a
 // blind setInterval, so a slow tick can never overlap with the next one.
 async function scheduleRefresh() {
+  if (await checkForNewVersion()) return;
   await refreshAppStatus();
   setTimeout(scheduleRefresh, REFRESH_INTERVAL_MS);
 }
