@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.10.0';
+const STATUS_PAGE_VERSION = 'v1.10.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -604,6 +604,7 @@ function renderRecentUpdates(count) {
     description.textContent = truncate(issue.body, 300) || 'No further details provided.';
 
     const timestamp = document.createElement('p');
+    timestamp.dataset.timestamp = '';
     timestamp.className = 'small opacity-75 mb-0';
     timestamp.textContent = timestampText(issue, isUpdate);
 
@@ -648,7 +649,7 @@ async function preloadIssueComments(issues) {
 
       for (const comment of comments) {
         const wrap = document.createElement('div');
-        wrap.className = 'mb-2';
+        wrap.className = 'comment-box p-2 mb-2';
 
         const edited = comment.updated_at !== comment.created_at;
         const meta = document.createElement('p');
@@ -663,7 +664,7 @@ async function preloadIssueComments(issues) {
         list.appendChild(wrap);
       }
 
-      body.appendChild(list);
+      body.querySelector('[data-timestamp]').before(list);
     })
   );
 }

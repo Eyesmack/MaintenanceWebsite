@@ -28,6 +28,14 @@
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.12);
       }
+      /* One step lighter than .sub-card — the accordion body itself already
+         sits on that exact tint (--bs-accordion-bg), so .sub-card alone
+         wouldn't show any background contrast for a boxed comment. */
+      .comment-box {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 0.375rem;
+      }
       .btn-custom {
         min-width: 220px;
       }
