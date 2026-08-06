@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.13.0';
+const STATUS_PAGE_VERSION = 'v1.14.0';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -44,6 +44,9 @@ const UPTIME_TIMEFRAMES = {
 // The history bar's length is fixed and independent of the Uptime %
 // selector above (same convention most status pages use).
 const UPTIME_HISTORY_DAYS = 30;
+
+// Matches the workflow's hourly sampling cadence for latency-history.json.
+const LATENCY_HISTORY_HOURS = 24;
 
 // Converts a naive "YYYY-MM-DD HH:MM" string (meant as wall-clock time in
 // `timeZone`) into the actual instant it represents, without any external
@@ -283,6 +286,24 @@ function createStatusCard(app) {
   uptimeHistory.style.height = '18px';
   uptimeHistory.dataset.uptimeHistory = '';
 
+  // Hidden until this app has at least one recorded sample — the hourly
+  // workflow run that populates latency-history.json won't have landed
+  // yet right after this ships, so there's nothing to chart initially.
+  const latencySection = document.createElement('div');
+  latencySection.dataset.latencySection = '';
+  latencySection.className = 'd-none';
+
+  const latencyLabel = document.createElement('p');
+  latencyLabel.className = 'small text mb-1 mt-2';
+  latencyLabel.textContent = 'Response Time (Last 24 Hours)';
+
+  const latencyHistory = document.createElement('div');
+  latencyHistory.className = 'd-flex gap-1 align-items-end';
+  latencyHistory.style.height = '18px';
+  latencyHistory.dataset.latencyHistory = '';
+
+  latencySection.append(latencyLabel, latencyHistory);
+
   body.append(title, message);
 
   // A card-footer (not just another card-body child) so it sits pinned to
@@ -292,7 +313,7 @@ function createStatusCard(app) {
   // at the bottom. Same pattern already used for the page's own footer.
   const cardFooter = document.createElement('div');
   cardFooter.className = 'card-footer border-top-0 pt-0';
-  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory);
+  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory, latencySection);
 
   card.append(body, cardFooter);
   col.appendChild(card);
@@ -345,6 +366,9 @@ let cachedRecentIssues = [];
 // Per-app down-event history, cached so the uptime timeframe selector can
 // recompute instantly without re-fetching.
 let cachedDownEventsByApp = {};
+
+// Per-app response-time samples from latency-history.json.
+let cachedLatencyByApp = {};
 
 // All app names, cached so the shared timeframe selector's change handler
 // can update every card — Object.keys(cachedDownEventsByApp) alone isn't
@@ -429,6 +453,38 @@ function renderUptimeHistory(app) {
   // instance. Its Tooltip JS takes over the `title` attribute (removing it
   // from native-tooltip duty) once initialized.
   container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+}
+
+// Bar height (not color) encodes relative latency — unlike uptime, a
+// slower response isn't inherently "bad" (some self-hosted apps are just
+// normally slower), so there's no invented good/bad threshold here, just
+// a sparkline scaled against the max value currently in view. Hidden
+// entirely until this app has at least one recorded sample.
+function renderLatencyHistory(app) {
+  const col = document.querySelector(`#status-cards [data-app="${app}"]`);
+  if (!col) return;
+  const section = col.querySelector('[data-latency-section]');
+  const container = col.querySelector('[data-latency-history]');
+
+  const samples = (cachedLatencyByApp[app] || []).slice(-LATENCY_HISTORY_HOURS);
+  if (!samples.length) {
+    section.classList.add('d-none');
+    return;
+  }
+
+  container.innerHTML = '';
+  const maxMs = Math.max(...samples.map((s) => s.ms), 1);
+  for (const sample of samples) {
+    const bar = document.createElement('div');
+    bar.className = 'flex-fill rounded-1 bg-info';
+    bar.style.height = `${Math.max(8, Math.round((sample.ms / maxMs) * 100))}%`;
+    bar.setAttribute('data-bs-toggle', 'tooltip');
+    bar.title = `${formatTimestamp(sample.t)} — ${sample.ms}ms`;
+    container.appendChild(bar);
+  }
+
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+  section.classList.remove('d-none');
 }
 
 function formatTimestamp(iso) {
@@ -749,10 +805,11 @@ function initRecentUpdates() {
 // app every ~1 minute server-side), and no rebuilding of #status-cards
 // (the app list never changes at runtime; cachedCols reuses the same DOM).
 async function refreshAppStatus() {
-  const { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp } =
-    await fetchAppIssues(cachedAppNames);
+  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp] =
+    await Promise.all([fetchAppIssues(cachedAppNames), fetchLatencyHistory()]);
 
   cachedDownEventsByApp = downEventsByApp;
+  cachedLatencyByApp = latencyByApp;
 
   // "Online" comes entirely from the workflow's own server-side checks (an
   // open auto-outage issue) or an announced maintenance window.
@@ -767,6 +824,7 @@ async function refreshAppStatus() {
     setMessage(cachedCols[app], online, issues);
     renderUptime(app);
     renderUptimeHistory(app);
+    renderLatencyHistory(app);
   });
 
   const state = getOverallState(cachedAppNames.map((app) => onlineByApp[app]));
@@ -779,6 +837,19 @@ async function refreshAppStatus() {
 }
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
+
+// latency-history.json is committed by the workflow (see status-check.yml)
+// once an hour — a plain same-origin static file, like apps.json, so this
+// needs no Cloudflare Worker/GitHub API involvement and no rate-limit use.
+async function fetchLatencyHistory() {
+  try {
+    const res = await fetch(`latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
 
 // Re-fetches the page's own live status.js (cache-busted) and compares its
 // STATUS_PAGE_VERSION to the one already running. Checking the live file
