@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.10.2';
+const STATUS_PAGE_VERSION = 'v1.11.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -8,8 +8,6 @@ async function loadApps() {
   const res = await fetch('apps.json', { cache: 'no-store' });
   return res.json();
 }
-
-const CHECK_TIMEOUT_MS = 6000;
 
 // Open issues in this repo labeled with an app key (e.g. "notflix")
 // are treated as manual status updates and shown on that app's card.
@@ -37,23 +35,6 @@ const UPTIME_TIMEFRAMES = {
 // The history bar's length is fixed and independent of the Uptime %
 // selector above (same convention most status pages use).
 const UPTIME_HISTORY_DAYS = 30;
-
-// no-cors mode can't read the HTTP status (opaque response), so a
-// resolved fetch only proves the host is reachable, not that the app
-// itself is healthy. A rejected fetch (network error or our own
-// timeout abort) is treated as offline.
-async function checkApp(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-  try {
-    await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
-    return true;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 // Converts a naive "YYYY-MM-DD HH:MM" string (meant as wall-clock time in
 // `timeZone`) into the actual instant it represents, without any external
@@ -199,8 +180,8 @@ function setMessage(col, online, issues) {
   }
 
   message.textContent = online
-    ? 'This service is reachable and has no known issues or planned maintenance.'
-    : 'This service could not be reached. It may be down, or blocking status checks from your network.';
+    ? 'This service has no known issues or planned maintenance.'
+    : 'This service is currently unreachable according to automated checks.';
 }
 
 function updateHeading(onlineFlags) {
@@ -332,6 +313,20 @@ let cachedDownEventsByApp = {};
 // reliable for this since an app with zero matched issues ever never gets
 // a key in that map at all.
 let cachedAppNames = [];
+
+// apps.json's result — only app names are used client-side now (see
+// refreshAppStatus), but the map is kept around rather than re-fetched.
+let cachedApps = {};
+
+// { appName: colElement }, from renderStatusCards() — kept so the refresh
+// loop can update the existing card DOM in place instead of rebuilding it
+// every cycle (the app list never changes at runtime).
+let cachedCols = {};
+
+// Fingerprint of the last-rendered Recent Updates issue list, so the
+// refresh loop only rebuilds that accordion (which would collapse any
+// expanded item) when something actually changed.
+let cachedRecentIssuesFingerprint = null;
 
 function renderUptime(app) {
   const select = document.getElementById('uptime-timeframe-select');
@@ -669,62 +664,84 @@ async function preloadIssueComments(issues) {
   );
 }
 
-function initRecentUpdates(recentIssues) {
+// Only each rendered issue's (number, state, updated_at) is compared —
+// GitHub bumps updated_at on edits, closes, and new comments alike, so
+// this catches "something changed" (including new comments) without a
+// separate comments diff.
+function fingerprintRecentIssues(recentIssues) {
+  return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
+}
+
+// Skips rebuilding the accordion when nothing has changed since the last
+// check — renderRecentUpdates() wipes and rebuilds it from scratch, which
+// would collapse any item the user currently has expanded.
+function updateRecentUpdates(recentIssues) {
+  const fingerprint = fingerprintRecentIssues(recentIssues);
+  if (fingerprint === cachedRecentIssuesFingerprint) return;
+  cachedRecentIssuesFingerprint = fingerprint;
   cachedRecentIssues = recentIssues;
+  issueCommentsCache.clear();
+  renderRecentUpdates(Number(document.getElementById('recent-updates-count').value));
+}
+
+function initRecentUpdates() {
   const select = document.getElementById('recent-updates-count');
-  renderRecentUpdates(Number(select.value));
   select.addEventListener('change', () => renderRecentUpdates(Number(select.value)));
 }
 
-async function init() {
-  const apps = await loadApps();
-  createUptimeTimeframeSelector();
-  const cols = renderStatusCards(apps);
-  const appNames = Object.keys(apps);
-  cachedAppNames = appNames;
-
-  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }] = await Promise.all([
-    Promise.all(
-      appNames.map(async (app) => {
-        const online = await checkApp(apps[app]);
-        return { app, online };
-      })
-    ),
-    fetchAppIssues(appNames),
-  ]);
+// Re-pulls GitHub issue data and updates the page in place — no client
+// probe of the apps themselves anymore (the workflow already checks every
+// app every ~1 minute server-side), and no rebuilding of #status-cards
+// (the app list never changes at runtime; cachedCols reuses the same DOM).
+async function refreshAppStatus() {
+  const { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp } =
+    await fetchAppIssues(cachedAppNames);
 
   cachedDownEventsByApp = downEventsByApp;
 
-  const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
-
-  // A no-cors browser probe can't see HTTP error statuses (e.g. 502) — it
-  // only detects total network failure. The workflow's auto-outage issue
-  // (based on a real status check) closes that gap: if one's open, treat
-  // the app as offline regardless of what the probe saw. An active
-  // maintenance window is also factored in here (rather than just at the
-  // badge level) so it correctly keeps the app out of the "All Systems
-  // Operational" count too.
-  const correctedOnlineByApp = Object.fromEntries(
-    appNames.map((app) => [app, onlineByApp[app] && !hasOpenAutoOutage[app] && !inMaintenance[app]])
+  // "Online" comes entirely from the workflow's own server-side checks (an
+  // open auto-outage issue) or an announced maintenance window.
+  const onlineByApp = Object.fromEntries(
+    cachedAppNames.map((app) => [app, !hasOpenAutoOutage[app] && !inMaintenance[app]])
   );
 
-  appNames.forEach((app) => {
-    const online = correctedOnlineByApp[app];
+  cachedAppNames.forEach((app) => {
+    const online = onlineByApp[app];
     const issues = issuesByApp[app];
-    setBadge(cols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
-    setMessage(cols[app], online, issues);
+    setBadge(cachedCols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
+    setMessage(cachedCols[app], online, issues);
     renderUptime(app);
     renderUptimeHistory(app);
   });
 
-  initUptimeTimeframeSelector();
-  updateHeading(appNames.map((app) => correctedOnlineByApp[app]));
-  initRecentUpdates(recentIssues);
+  updateHeading(cachedAppNames.map((app) => onlineByApp[app]));
+  updateRecentUpdates(recentIssues);
 
   document.getElementById('last-updated').textContent =
     `Last updated: ${formatTimestamp(new Date())} · ${STATUS_PAGE_VERSION}`;
-  document.getElementById('version-text').textContent =
-  `${STATUS_PAGE_VERSION}`;
+}
+
+const REFRESH_INTERVAL_MS = 60 * 1000;
+
+// Reschedules only after the current refresh finishes, rather than a
+// blind setInterval, so a slow tick can never overlap with the next one.
+async function scheduleRefresh() {
+  await refreshAppStatus();
+  setTimeout(scheduleRefresh, REFRESH_INTERVAL_MS);
+}
+
+async function init() {
+  cachedApps = await loadApps();
+  createUptimeTimeframeSelector();
+  cachedCols = renderStatusCards(cachedApps);
+  cachedAppNames = Object.keys(cachedApps);
+
+  initUptimeTimeframeSelector();
+  initRecentUpdates();
+
+  document.getElementById('version-text').textContent = `${STATUS_PAGE_VERSION}`;
+
+  await scheduleRefresh();
 }
 
 init();
