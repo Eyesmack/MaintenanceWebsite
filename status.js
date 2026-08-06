@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.11.0';
+const STATUS_PAGE_VERSION = 'v1.11.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -523,6 +523,17 @@ function renderRecentUpdates(count) {
     return;
   }
 
+  // Capture which items are currently expanded so the rebuild below (which
+  // happens on every fingerprint change from the auto-refresh loop, not
+  // just a manual count-selector change) doesn't snap them back closed —
+  // e.g. someone watching a big ongoing issue for new comments shouldn't
+  // have it collapse out from under them the moment one arrives.
+  const expandedIssueNumbers = new Set(
+    Array.from(accordion.querySelectorAll('.accordion-item'))
+      .filter((item) => item.querySelector('.accordion-collapse')?.classList.contains('show'))
+      .map((item) => item.dataset.issueNumber)
+  );
+
   accordion.innerHTML = '';
   const toRender = cachedRecentIssues.slice(0, count);
   for (const { apps, issue, isUpdate } of toRender) {
@@ -605,6 +616,12 @@ function renderRecentUpdates(count) {
 
     collapseBody.append(affectedApps, description, timestamp);
     collapse.appendChild(collapseBody);
+
+    if (expandedIssueNumbers.has(String(issue.number))) {
+      button.classList.remove('collapsed');
+      button.setAttribute('aria-expanded', 'true');
+      collapse.classList.add('show');
+    }
 
     item.append(header, collapse);
     accordion.appendChild(item);
