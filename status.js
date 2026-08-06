@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.10.1';
+const STATUS_PAGE_VERSION = 'v1.10.2';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -302,7 +302,7 @@ function createUptimeTimeframeSelector() {
   const label = document.createElement('label');
   label.htmlFor = 'uptime-timeframe-select';
   label.className = 'small text mb-0';
-  label.textContent = 'Uptime Timeframe:';
+  label.textContent = 'Uptime% Timeframe:';
 
   const select = document.createElement('select');
   select.id = 'uptime-timeframe-select';
@@ -312,7 +312,7 @@ function createUptimeTimeframeSelector() {
     const option = document.createElement('option');
     option.value = key;
     option.textContent = optionLabel;
-    if (key === '24h') option.selected = true;
+    if (key === '7d') option.selected = true;
     select.appendChild(option);
   }
 
