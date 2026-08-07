@@ -11,6 +11,18 @@ body {
 .version-text{
   color: #6a7585;
 }
+/* The app name on each status card is itself the link to that app's
+   detail page (app.html) — styled to still read as a heading rather
+   than a generic blue hyperlink: inherits .text's color, only hints at
+   being clickable via an underline on hover/focus. */
+.app-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+.app-name-link:hover,
+.app-name-link:focus {
+  text-decoration: underline;
+}
 .home-card {
   backdrop-filter: blur(12px);
   background: rgba(255, 255, 255, 0.08);
@@ -78,6 +90,14 @@ body {
 .accordion-link-btn:focus {
   background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
+}
+/* app.html's 90-day strip is the same 30-day strip as the status cards
+   (status.js's data-uptime-history), just 3x the squares in the same
+   card width — the default gap-1 (4px) leaves zero width per square on
+   a narrow phone, so it's tightened here only (the 30-day strip has
+   room to keep the wider default). */
+#app-uptime-history {
+  gap: 1px !important;
 }
 /* history.html's monthly summary table — border tones matching the rest
    of the dark theme (same rgba values as .sub-card) rather than
