@@ -1,20 +1,24 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.16.5';
+const STATUS_PAGE_VERSION = 'v1.7.11';
 
-// Captured once, before status.js ever changes it, so index.html's
-// <title> stays the single source of truth for the page's base title.
-const BASE_TITLE = document.title;
+// App-to-URL mapping lives in apps.json, shared with the GitHub Actions
+// status-check workflow so both stay in sync from one source of truth.
+async function loadApps() {
+  const res = await fetch('apps.json', { cache: 'no-store' });
+  return res.json();
+}
 
-// Matches the hex values behind Bootstrap's bg-success/bg-warning/bg-danger,
-// so the favicon dot's colors stay consistent with the card badges.
-const FAVICON_COLORS = { operational: '#198754', partial: '#ffc107', down: '#dc3545' };
-let faviconDataUrlCache = {};
+const CHECK_TIMEOUT_MS = 6000;
 
-// loadApps, GITHUB_REPO, GITHUB_PROXY_BASE, MONITORING_START_DATE,
-// getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
-// and fetchAppIssues now live in common.js (loaded before this file),
-// shared with history.js.
+// Open issues in this repo labeled with an app key (e.g. "notflix")
+// are treated as manual status updates and shown on that app's card.
+const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
+
+// Set this to when you actually started using this status page — "All
+// Time" uptime is measured from here, since there's no real
+// monitoring-start record to derive it from automatically.
+const MONITORING_START_DATE = '2026-07-31T00:00:00Z';
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -28,8 +32,135 @@ const UPTIME_TIMEFRAMES = {
 // selector above (same convention most status pages use).
 const UPTIME_HISTORY_DAYS = 30;
 
-// Matches the workflow's hourly sampling cadence for latency-history.json.
-const LATENCY_HISTORY_HOURS = 24;
+// no-cors mode can't read the HTTP status (opaque response), so a
+// resolved fetch only proves the host is reachable, not that the app
+// itself is healthy. A rejected fetch (network error or our own
+// timeout abort) is treated as offline.
+async function checkApp(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+  try {
+    await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Converts a naive "YYYY-MM-DD HH:MM" string (meant as wall-clock time in
+// `timeZone`) into the actual instant it represents, without any external
+// date library. Mirrors the workflow's `TZ='Pacific/Auckland' date -d`
+// logic so the client and the GitHub Action agree on what "now" means
+// relative to a maintenance window.
+function getTimeZoneOffsetMinutes(timeZone, date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return (asUTC - date.getTime()) / 60000;
+}
+
+function parseZonedDateTime(naiveStr, timeZone) {
+  const guessUTC = new Date(`${naiveStr.replace(' ', 'T')}Z`);
+  const offsetMinutes = getTimeZoneOffsetMinutes(timeZone, guessUTC);
+  return new Date(guessUTC.getTime() - offsetMinutes * 60000);
+}
+
+// Same Maintenance-Start/Maintenance-End convention (and NZ timezone) the
+// status-check workflow looks for when deciding whether to skip filing an
+// outage issue. Returns null if either line is missing/unparseable.
+function extractMaintenanceWindow(body) {
+  const startMatch = (body || '').match(/Maintenance-Start:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+  const endMatch = (body || '').match(/Maintenance-End:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+  if (!startMatch || !endMatch) return null;
+  return {
+    start: parseZonedDateTime(startMatch[1], 'Pacific/Auckland'),
+    end: parseZonedDateTime(endMatch[1], 'Pacific/Auckland'),
+  };
+}
+
+// Only issues labeled with a known app name are matched (label match is
+// case-insensitive, so "Homepage" in apps.json matches a "homepage"
+// label); anything else in the repo (site bugs, feature requests, etc.)
+// is ignored so it never shows up on the public page. Fetches every
+// issue (open and closed) in one call: issuesByApp (open only) drives
+// the per-app card badge/message, recentIssues (open+closed, already
+// newest-first from the API) feeds the Recent Updates section.
+// Failures here are swallowed so a GitHub API hiccup never blocks the
+// reachability checks.
+async function fetchAppIssues(appNames) {
+  const issuesByApp = {};
+  const recentIssues = [];
+  const hasOpenAutoOutage = {};
+  const inMaintenance = {};
+  const downEventsByApp = {};
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
+    const issues = await res.json();
+    for (const issue of issues) {
+      if (issue.pull_request) continue;
+      const labels = issue.labels.map((label) =>
+        (typeof label === 'string' ? label : label.name).toLowerCase()
+      );
+      // An issue can carry more than one app's label (e.g. a
+      // whole-server maintenance notice) — match all of them, not just
+      // the first, so it shows up on every affected app's card.
+      const matchedApps = appNames.filter((name) => labels.includes(name.toLowerCase()));
+      if (!matchedApps.length) continue;
+
+      // The "update" label marks an issue as a planned/informational note
+      // rather than a real incident, so Recent Updates knows not to show a
+      // downtime duration for it (a maintenance notice isn't "downtime").
+      const isUpdate = labels.includes('update');
+      recentIssues.push({ apps: matchedApps, issue, isUpdate });
+
+      // Every matched issue (open or closed, planned or not) counts as a
+      // down-period for uptime% purposes — tracked unconditionally, unlike
+      // issuesByApp below which is open-only and drives the live badge.
+      for (const appName of matchedApps) {
+        (downEventsByApp[appName] ||= []).push(issue);
+      }
+
+      if (issue.state === 'open') {
+        for (const appName of matchedApps) {
+          (issuesByApp[appName] ||= []).push(issue);
+          if (labels.includes('auto-outage')) {
+            hasOpenAutoOutage[appName] = true;
+          }
+          if (isUpdate) {
+            const window = extractMaintenanceWindow(issue.body);
+            if (window) {
+              const now = new Date();
+              if (now >= window.start && now <= window.end) {
+                inMaintenance[appName] = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch status-update issues from GitHub', err);
+  }
+  return { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp };
+}
+
+function truncate(text, max) {
+  const clean = (text || '').trim();
+  return clean.length > max ? `${clean.slice(0, max).trim()}…` : clean;
+}
 
 function setBadge(col, online, hasIssue, inMaintenance) {
   const badge = col.querySelector('[data-badge]');
@@ -62,48 +193,19 @@ function setMessage(col, online, issues) {
   }
 
   message.textContent = online
-    ? 'This service has no known issues or planned maintenance.'
-    : 'This service is currently unreachable according to automated checks.';
+    ? 'This service is reachable and has no known issues or planned maintenance.'
+    : 'This service could not be reached. It may be down, or blocking status checks from your network.';
 }
 
-function getOverallState(onlineFlags) {
-  const onlineCount = onlineFlags.filter(Boolean).length;
-  if (onlineCount === onlineFlags.length) return 'operational';
-  if (onlineCount === 0) return 'down';
-  return 'partial';
-}
-
-function buildFaviconDataUrl(color) {
-  if (faviconDataUrlCache[color]) return faviconDataUrlCache[color];
-  const canvas = document.createElement('canvas');
-  canvas.width = 32;
-  canvas.height = 32;
-  const ctx = canvas.getContext('2d');
-  ctx.beginPath();
-  ctx.arc(16, 16, 14, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  faviconDataUrlCache[color] = canvas.toDataURL('image/png');
-  return faviconDataUrlCache[color];
-}
-
-// The favicon dot always reflects the current state (a steady "still
-// green" signal), but the title is only prefixed for non-operational
-// states — reserved for "something needs your attention".
-function updateFaviconAndTitle(state) {
-  document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
-  const prefix = state === 'down' ? 'Full Outage | ' : state === 'partial' ? 'Partial Outage | ' : '';
-  document.title = `${prefix}${BASE_TITLE}`;
-}
-
-function updateHeading(state) {
+function updateHeading(onlineFlags) {
   const heading = document.getElementById('status-heading');
   const subheading = document.getElementById('status-subheading');
+  const onlineCount = onlineFlags.filter(Boolean).length;
 
-  if (state === 'operational') {
+  if (onlineCount === onlineFlags.length) {
     heading.textContent = 'All Systems Operational';
     subheading.textContent = 'Everything is up and running normally.';
-  } else if (state === 'down') {
+  } else if (onlineCount === 0) {
     heading.textContent = "We'll be right back";
     subheading.textContent = "Everything appears to be down. I'm looking into it — thanks for your patience!";
   } else {
@@ -156,24 +258,6 @@ function createStatusCard(app) {
   uptimeHistory.style.height = '18px';
   uptimeHistory.dataset.uptimeHistory = '';
 
-  // Hidden until this app has at least one recorded sample — the hourly
-  // workflow run that populates latency-history.json won't have landed
-  // yet right after this ships, so there's nothing to chart initially.
-  const latencySection = document.createElement('div');
-  latencySection.dataset.latencySection = '';
-  latencySection.className = 'd-none';
-
-  const latencyLabel = document.createElement('p');
-  latencyLabel.className = 'small text mb-1 mt-2';
-  latencyLabel.textContent = 'Response Time (Last 24 Hours)';
-
-  const latencyHistory = document.createElement('div');
-  latencyHistory.className = 'd-flex gap-1 align-items-end';
-  latencyHistory.style.height = '18px';
-  latencyHistory.dataset.latencyHistory = '';
-
-  latencySection.append(latencyLabel, latencyHistory);
-
   body.append(title, message);
 
   // A card-footer (not just another card-body child) so it sits pinned to
@@ -183,7 +267,7 @@ function createStatusCard(app) {
   // at the bottom. Same pattern already used for the page's own footer.
   const cardFooter = document.createElement('div');
   cardFooter.className = 'card-footer border-top-0 pt-0';
-  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory, latencySection);
+  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory);
 
   card.append(body, cardFooter);
   col.appendChild(card);
@@ -212,7 +296,7 @@ function createUptimeTimeframeSelector() {
   const label = document.createElement('label');
   label.htmlFor = 'uptime-timeframe-select';
   label.className = 'small text mb-0';
-  label.textContent = 'Uptime% Timeframe:';
+  label.textContent = 'Uptime Timeframe:';
 
   const select = document.createElement('select');
   select.id = 'uptime-timeframe-select';
@@ -222,7 +306,7 @@ function createUptimeTimeframeSelector() {
     const option = document.createElement('option');
     option.value = key;
     option.textContent = optionLabel;
-    if (key === '7d') option.selected = true;
+    if (key === '24h') option.selected = true;
     select.appendChild(option);
   }
 
@@ -237,28 +321,11 @@ let cachedRecentIssues = [];
 // recompute instantly without re-fetching.
 let cachedDownEventsByApp = {};
 
-// Per-app response-time samples from latency-history.json.
-let cachedLatencyByApp = {};
-
 // All app names, cached so the shared timeframe selector's change handler
 // can update every card — Object.keys(cachedDownEventsByApp) alone isn't
 // reliable for this since an app with zero matched issues ever never gets
 // a key in that map at all.
 let cachedAppNames = [];
-
-// apps.json's result — only app names are used client-side now (see
-// refreshAppStatus), but the map is kept around rather than re-fetched.
-let cachedApps = {};
-
-// { appName: colElement }, from renderStatusCards() — kept so the refresh
-// loop can update the existing card DOM in place instead of rebuilding it
-// every cycle (the app list never changes at runtime).
-let cachedCols = {};
-
-// Fingerprint of the last-rendered Recent Updates issue list, so the
-// refresh loop only rebuilds that accordion (which would collapse any
-// expanded item) when something actually changed.
-let cachedRecentIssuesFingerprint = null;
 
 function renderUptime(app) {
   const select = document.getElementById('uptime-timeframe-select');
@@ -325,40 +392,22 @@ function renderUptimeHistory(app) {
   container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
 }
 
-// Bar height (not color) encodes relative latency — unlike uptime, a
-// slower response isn't inherently "bad" (some self-hosted apps are just
-// normally slower), so there's no invented good/bad threshold here, just
-// a sparkline scaled against the max value currently in view. Hidden
-// entirely until this app has at least one recorded sample.
-function renderLatencyHistory(app) {
-  const col = document.querySelector(`#status-cards [data-app="${app}"]`);
-  if (!col) return;
-  const section = col.querySelector('[data-latency-section]');
-  const container = col.querySelector('[data-latency-history]');
-
-  const samples = (cachedLatencyByApp[app] || []).slice(-LATENCY_HISTORY_HOURS);
-  if (!samples.length) {
-    section.classList.add('d-none');
-    return;
-  }
-
-  container.innerHTML = '';
-  const maxMs = Math.max(...samples.map((s) => s.ms), 1);
-  for (const sample of samples) {
-    const bar = document.createElement('div');
-    bar.className = 'flex-fill rounded-1 bg-info';
-    bar.style.height = `${Math.max(8, Math.round((sample.ms / maxMs) * 100))}%`;
-    bar.setAttribute('data-bs-toggle', 'tooltip');
-    bar.title = `${formatTimestamp(sample.t)} — ${sample.ms}ms`;
-    container.appendChild(bar);
-  }
-
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
-  section.classList.remove('d-none');
+function formatTimestamp(iso) {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// formatTimestamp, formatDuration, and calculateUptimePercent now live in
-// common.js (loaded before this file), shared with history.js.
+function formatDuration(ms) {
+  const totalMinutes = Math.max(0, Math.round(ms / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || !parts.length) parts.push(`${minutes}m`);
+  return parts.join(' ');
+}
 
 function getUptimeWindow(timeframeKey, now) {
   const timeframe = UPTIME_TIMEFRAMES[timeframeKey];
@@ -366,6 +415,43 @@ function getUptimeWindow(timeframeKey, now) {
     ? new Date(MONITORING_START_DATE)
     : new Date(now.getTime() - timeframe.ms);
   return [start, now];
+}
+
+// Treats every issue's [created_at, closed_at || now] as a down-period,
+// clips each to the window, merges overlaps (so overlapping issues never
+// get double-counted), and returns the uptime percentage for that window.
+function calculateUptimePercent(issues, windowStart, windowEnd) {
+  const windowMs = windowEnd - windowStart;
+  if (windowMs <= 0) return 100;
+
+  const intervals = issues
+    .map((issue) => {
+      // Planned-maintenance issues get filed ahead of time — the down
+      // period is the declared Maintenance-Start/End window, not when the
+      // heads-up notice happened to be created. Real incidents never have
+      // a parseable window, so this falls through to created_at/closed_at
+      // for them exactly as before.
+      const window = extractMaintenanceWindow(issue.body);
+      const start = window ? window.start : new Date(issue.created_at);
+      const end = window ? window.end : (issue.closed_at ? new Date(issue.closed_at) : windowEnd);
+      return [Math.max(start, windowStart), Math.min(end, windowEnd)];
+    })
+    .filter(([start, end]) => end > start)
+    .sort((a, b) => a[0] - b[0]);
+
+  const merged = [];
+  for (const [start, end] of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1]) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  const downtimeMs = merged.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const uptimeMs = Math.max(0, windowMs - downtimeMs);
+  return Math.min(100, (uptimeMs / windowMs) * 100);
 }
 
 function timestampText(issue, isUpdate) {
@@ -384,57 +470,48 @@ function timestampText(issue, isUpdate) {
       ? `Expected Outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
-  // Real incidents: resolveIssueInterval prefers a declared Incident-Start
-  // over raw created_at when one's present — unlike the isUpdate case
-  // above, a start declared here isn't a prediction made in advance, it's
-  // the true start backfilled after the fact (e.g. the outage began hours
-  // before anyone got around to filing the issue), so it's more
-  // trustworthy than created_at once given. The end is always closed_at/
-  // "now", never a second declared value — see resolveIssueInterval.
-  const [start, end] = resolveIssueInterval(issue, new Date());
   if (issue.state === 'closed' && issue.closed_at) {
-    return `Down for ${formatDuration(end - start)} — Resolved ${formatTimestamp(end)}`;
+    const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
+    return `Down for ${duration} — Resolved ${formatTimestamp(issue.closed_at)}`;
   }
-  return `Down since ${formatTimestamp(start)}`;
+  return `Down since ${formatTimestamp(issue.created_at)}`;
 }
 
 // A compact one-line version of timestampText for the accordion header —
 // drops the duration ("Down for Xh Ym —") so it fits alongside the title
 // without needing to expand the item first.
 function shortTimestampText(issue, isUpdate) {
+  if (issue.state === 'closed' && issue.closed_at) {
+    return `Resolved ${formatTimestamp(issue.closed_at)}`;
+  }
   if (isUpdate) {
-    if (issue.state === 'closed' && issue.closed_at) {
-      return `Resolved ${formatTimestamp(issue.closed_at)}`;
-    }
     const window = extractMaintenanceWindow(issue.body);
     return window
       ? `Expected outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
-  const [start, end] = resolveIssueInterval(issue, new Date());
-  if (issue.state === 'closed' && issue.closed_at) {
-    return `Resolved ${formatTimestamp(end)}`;
-  }
-  return `Down since ${formatTimestamp(start)}`;
+  return `Down since ${formatTimestamp(issue.created_at)}`;
 }
 
-// Comments are shown so the user can post live debugging updates on an
-// outage issue and have them appear here as they're added, not just a
-// final "closing comment". Cached per issue number so switching the
-// Recent Updates count back and forth never re-fetches.
-const issueCommentsCache = new Map();
+// A closed issue's "closing comment" isn't a distinct GitHub field — it's
+// just the last comment on the issue (what the workflow posts via
+// `--comment` when auto-closing an outage, or whatever's left when closing
+// one by hand). Cached per issue number so re-expanding an accordion item
+// never re-fetches.
+const closingCommentCache = new Map();
 
-async function fetchIssueComments(issueNumber) {
+async function fetchClosingComment(issueNumber) {
   try {
     const res = await fetch(
-      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments?per_page=100`,
+      `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments`,
       { headers: { Accept: 'application/vnd.github+json' } }
     );
     if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
-    return res.json();
+    const comments = await res.json();
+    return comments.length ? comments[comments.length - 1].body : null;
   } catch (err) {
-    console.warn(`Could not fetch comments for issue #${issueNumber}`, err);
-    return [];
+    console.warn(`Could not fetch closing comment for issue #${issueNumber}`, err);
+    return null;
   }
 }
 
@@ -447,25 +524,14 @@ function renderRecentUpdates(count) {
     return;
   }
 
-  // Capture which items are currently expanded so the rebuild below (which
-  // happens on every fingerprint change from the auto-refresh loop, not
-  // just a manual count-selector change) doesn't snap them back closed —
-  // e.g. someone watching a big ongoing issue for new comments shouldn't
-  // have it collapse out from under them the moment one arrives.
-  const expandedIssueNumbers = new Set(
-    Array.from(accordion.querySelectorAll('.accordion-item'))
-      .filter((item) => item.querySelector('.accordion-collapse')?.classList.contains('show'))
-      .map((item) => item.dataset.issueNumber)
-  );
-
   accordion.innerHTML = '';
-  const toRender = cachedRecentIssues.slice(0, count);
-  for (const { apps, issue, isUpdate } of toRender) {
+  for (const { apps, issue, isUpdate } of cachedRecentIssues.slice(0, count)) {
     const collapseId = `ru-collapse-${issue.number}`;
 
     const item = document.createElement('div');
     item.className = 'accordion-item';
     item.dataset.issueNumber = String(issue.number);
+    item.dataset.issueState = issue.state;
 
     // A flex row: the toggle button (still the only click target for
     // expand/collapse) plus a separate link icon after it. The link can't
@@ -528,215 +594,109 @@ function renderRecentUpdates(count) {
     affectedApps.className = 'small opacity-75 mb-2';
     affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
 
-    // A div, not a <p> — body_html can contain block-level content
-    // (lists, code blocks, multiple paragraphs), which a <p> can't
-    // validly hold (the parser would auto-close it around any nested
-    // block element). Falls back to plain text (not innerHTML) when
-    // body_html isn't present, so raw markdown source is never
-    // accidentally parsed as HTML.
-    const description = document.createElement('div');
+    const description = document.createElement('p');
     description.dataset.description = '';
-    description.className = 'markdown-body';
-    if (issue.body_html) {
-      description.innerHTML = issue.body_html;
-    } else {
-      description.textContent = issue.body || 'No further details provided.';
-    }
+    description.className = 'preserve-lines';
+    description.textContent = truncate(issue.body, 300) || 'No further details provided.';
 
     const timestamp = document.createElement('p');
-    timestamp.dataset.timestamp = '';
     timestamp.className = 'small opacity-75 mb-0';
     timestamp.textContent = timestampText(issue, isUpdate);
 
     collapseBody.append(affectedApps, description, timestamp);
     collapse.appendChild(collapseBody);
 
-    if (expandedIssueNumbers.has(String(issue.number))) {
-      button.classList.remove('collapsed');
-      button.setAttribute('aria-expanded', 'true');
-      collapse.classList.add('show');
-    }
-
     item.append(header, collapse);
     accordion.appendChild(item);
   }
 
   section.classList.remove('d-none');
-  preloadIssueComments(toRender);
 }
 
-// Fetches comments for every currently rendered issue (open or closed —
-// a debugging update can be posted at any point, not just when closing),
-// in parallel, and injects each issue's comment list as soon as it
-// resolves — rather than waiting for the user to expand that item.
-// issueCommentsCache dedupes across calls, so switching the Recent
-// Updates count back and forth never re-fetches an issue already loaded.
-async function preloadIssueComments(issues) {
+// Event delegation: one listener for the whole accordion, rather than one
+// per item. Fires each time any item is expanded; only fetches the closing
+// comment the first time a given closed issue is opened.
+function initRecentUpdatesAccordion() {
   const accordion = document.getElementById('recent-updates-accordion');
-  await Promise.all(
-    issues.map(async ({ issue }) => {
-      if (!issueCommentsCache.has(issue.number)) {
-        issueCommentsCache.set(issue.number, await fetchIssueComments(issue.number));
-      }
-      const comments = issueCommentsCache.get(issue.number);
-      if (!comments.length) return;
+  accordion.addEventListener('shown.bs.collapse', async (event) => {
+    const item = event.target.closest('.accordion-item');
+    if (!item || item.dataset.issueState !== 'closed') return;
 
-      const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
-      if (!body || body.querySelector('[data-comments]')) return;
+    const issueNumber = Number(item.dataset.issueNumber);
+    if (!closingCommentCache.has(issueNumber)) {
+      closingCommentCache.set(issueNumber, await fetchClosingComment(issueNumber));
+    }
+    const comment = closingCommentCache.get(issueNumber);
+    if (!comment) return;
 
-      const list = document.createElement('div');
-      list.dataset.comments = '';
-      list.className = 'mt-2';
+    const body = event.target.querySelector('.accordion-body');
+    if (!body || body.querySelector('[data-closing-comment]')) return;
 
-      const label = document.createElement('p');
-      label.className = 'small opacity-75 mb-1';
-      label.textContent = 'Updates:';
-      list.appendChild(label);
-
-      for (const comment of comments) {
-        const wrap = document.createElement('div');
-        wrap.className = 'comment-box p-2 mb-2';
-
-        const edited = comment.updated_at !== comment.created_at;
-        const meta = document.createElement('p');
-        meta.className = 'small opacity-75 mb-0';
-        meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
-
-        // A div, not a <p> — same reasoning as the description above.
-        const commentBody = document.createElement('div');
-        commentBody.className = 'markdown-body mb-0';
-        if (comment.body_html) {
-          commentBody.innerHTML = comment.body_html;
-        } else {
-          commentBody.textContent = comment.body;
-        }
-
-        wrap.append(meta, commentBody);
-        list.appendChild(wrap);
-      }
-
-      body.querySelector('[data-timestamp]').before(list);
-    })
-  );
+    const resolution = document.createElement('p');
+    resolution.dataset.closingComment = '';
+    resolution.className = 'preserve-lines';
+    resolution.textContent = `Closing Comment: ${truncate(comment, 300)}`;
+    body.querySelector('[data-description]').after(resolution);
+  });
 }
 
-// Only each rendered issue's (number, state, updated_at) is compared —
-// GitHub bumps updated_at on edits, closes, and new comments alike, so
-// this catches "something changed" (including new comments) without a
-// separate comments diff.
-function fingerprintRecentIssues(recentIssues) {
-  return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
-}
-
-// Skips rebuilding the accordion when nothing has changed since the last
-// check — renderRecentUpdates() wipes and rebuilds it from scratch, which
-// would collapse any item the user currently has expanded.
-function updateRecentUpdates(recentIssues) {
-  const fingerprint = fingerprintRecentIssues(recentIssues);
-  if (fingerprint === cachedRecentIssuesFingerprint) return;
-  cachedRecentIssuesFingerprint = fingerprint;
+function initRecentUpdates(recentIssues) {
   cachedRecentIssues = recentIssues;
-  issueCommentsCache.clear();
-  renderRecentUpdates(Number(document.getElementById('recent-updates-count').value));
-}
-
-function initRecentUpdates() {
+  initRecentUpdatesAccordion();
   const select = document.getElementById('recent-updates-count');
+  renderRecentUpdates(Number(select.value));
   select.addEventListener('change', () => renderRecentUpdates(Number(select.value)));
 }
 
-// Re-pulls GitHub issue data and updates the page in place — no client
-// probe of the apps themselves anymore (the workflow already checks every
-// app every ~1 minute server-side), and no rebuilding of #status-cards
-// (the app list never changes at runtime; cachedCols reuses the same DOM).
-async function refreshAppStatus() {
-  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp] =
-    await Promise.all([fetchAppIssues(cachedAppNames), fetchLatencyHistory()]);
+async function init() {
+  const apps = await loadApps();
+  createUptimeTimeframeSelector();
+  const cols = renderStatusCards(apps);
+  const appNames = Object.keys(apps);
+  cachedAppNames = appNames;
+
+  const [reachability, { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }] = await Promise.all([
+    Promise.all(
+      appNames.map(async (app) => {
+        const online = await checkApp(apps[app]);
+        return { app, online };
+      })
+    ),
+    fetchAppIssues(appNames),
+  ]);
 
   cachedDownEventsByApp = downEventsByApp;
-  cachedLatencyByApp = latencyByApp;
 
-  // "Online" comes entirely from the workflow's own server-side checks (an
-  // open auto-outage issue) or an announced maintenance window.
-  const onlineByApp = Object.fromEntries(
-    cachedAppNames.map((app) => [app, !hasOpenAutoOutage[app] && !inMaintenance[app]])
+  const onlineByApp = Object.fromEntries(reachability.map(({ app, online }) => [app, online]));
+
+  // A no-cors browser probe can't see HTTP error statuses (e.g. 502) — it
+  // only detects total network failure. The workflow's auto-outage issue
+  // (based on a real status check) closes that gap: if one's open, treat
+  // the app as offline regardless of what the probe saw. An active
+  // maintenance window is also factored in here (rather than just at the
+  // badge level) so it correctly keeps the app out of the "All Systems
+  // Operational" count too.
+  const correctedOnlineByApp = Object.fromEntries(
+    appNames.map((app) => [app, onlineByApp[app] && !hasOpenAutoOutage[app] && !inMaintenance[app]])
   );
 
-  cachedAppNames.forEach((app) => {
-    const online = onlineByApp[app];
+  appNames.forEach((app) => {
+    const online = correctedOnlineByApp[app];
     const issues = issuesByApp[app];
-    setBadge(cachedCols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
-    setMessage(cachedCols[app], online, issues);
+    setBadge(cols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
+    setMessage(cols[app], online, issues);
     renderUptime(app);
     renderUptimeHistory(app);
-    renderLatencyHistory(app);
   });
 
-  const state = getOverallState(cachedAppNames.map((app) => onlineByApp[app]));
-  updateHeading(state);
-  updateFaviconAndTitle(state);
-  updateRecentUpdates(recentIssues);
+  initUptimeTimeframeSelector();
+  updateHeading(appNames.map((app) => correctedOnlineByApp[app]));
+  initRecentUpdates(recentIssues);
 
   document.getElementById('last-updated').textContent =
     `Last updated: ${formatTimestamp(new Date())} · ${STATUS_PAGE_VERSION}`;
-}
-
-const REFRESH_INTERVAL_MS = 60 * 1000;
-
-// latency-history.json is committed by the workflow (see status-check.yml)
-// once an hour — a plain same-origin static file, like apps.json, so this
-// needs no Cloudflare Worker/GitHub API involvement and no rate-limit use.
-async function fetchLatencyHistory() {
-  try {
-    const res = await fetch(`latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return {};
-    return await res.json();
-  } catch {
-    return {};
-  }
-}
-
-// Re-fetches the page's own live status.js (cache-busted) and compares its
-// STATUS_PAGE_VERSION to the one already running. Checking the live file
-// itself, rather than the repo/API, means this only ever reloads once a
-// new deploy is actually being served — no false positive during GitHub
-// Pages' own build/propagation lag right after a push.
-async function checkForNewVersion() {
-  try {
-    const res = await fetch(`status.js?v=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return false;
-    const text = await res.text();
-    const match = text.match(/const STATUS_PAGE_VERSION = '([^']+)'/);
-    if (match && match[1] !== STATUS_PAGE_VERSION) {
-      location.reload();
-      return true;
-    }
-  } catch {
-    // A fetch hiccup just means we try again next cycle.
-  }
-  return false;
-}
-
-// Reschedules only after the current refresh finishes, rather than a
-// blind setInterval, so a slow tick can never overlap with the next one.
-async function scheduleRefresh() {
-  if (await checkForNewVersion()) return;
-  await refreshAppStatus();
-  setTimeout(scheduleRefresh, REFRESH_INTERVAL_MS);
-}
-
-async function init() {
-  cachedApps = await loadApps();
-  createUptimeTimeframeSelector();
-  cachedCols = renderStatusCards(cachedApps);
-  cachedAppNames = Object.keys(cachedApps);
-
-  initUptimeTimeframeSelector();
-  initRecentUpdates();
-
-  document.getElementById('version-text').textContent = `${STATUS_PAGE_VERSION}`;
-
-  await scheduleRefresh();
+  document.getElementById('version-text').textContent =
+  `${STATUS_PAGE_VERSION}`;
 }
 
 init();

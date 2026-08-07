@@ -12,7 +12,7 @@ on:
 
 permissions:
   issues: write
-  contents: write
+  contents: read
 
 jobs:
   check-status:
@@ -57,18 +57,6 @@ jobs:
           state_json=$(gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")')
           echo "$state_json" | jq empty >/dev/null 2>&1 || state_json='{}'
 
-          # Response-time samples are recorded once an hour (not every
-          # 1-minute check) so the resulting git commits stay infrequent.
-          # _lastLatencyHour piggybacks on the same state blob above rather
-          # than needing a separate issue or file read on the other runs.
-          current_hour=$(date -u +'%Y-%m-%dT%H')
-          record_latency=false
-          if [[ "$(echo "$state_json" | jq -r '._lastLatencyHour // ""')" != "$current_hour" ]]; then
-            record_latency=true
-            latency_json=$(cat latency-history.json 2>/dev/null || echo '{}')
-            echo "$latency_json" | jq empty >/dev/null 2>&1 || latency_json='{}'
-          fi
-
           while IFS=$'\t' read -r key url; do
             # Labels are always lowercase regardless of how apps.json
             # capitalizes the app name, so this stays in sync with the page's
@@ -78,15 +66,9 @@ jobs:
             gh label create "$label" --color 5319e7 \
               --description "Status updates for $key" --force >/dev/null 2>&1 || true
 
-            read -r status time_total <<< "$(curl -sL -A "GitHub-Actions-StatusCheck" -o /dev/null -w '%{http_code} %{time_total}' \
-              --max-time 10 --retry 2 --retry-delay 2 "$url" || echo "000 0")"
-            echo "$key ($url) -> HTTP $status (${time_total}s)"
-
-            if [[ "$record_latency" == true ]]; then
-              latency_ms=$(awk -v t="$time_total" 'BEGIN { printf "%.0f", t * 1000 }')
-              latency_json=$(echo "$latency_json" | jq --arg k "$key" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --argjson ms "$latency_ms" \
-                '.[$k] = ((.[$k] // []) + [{t: $t, ms: $ms}])')
-            fi
+            status=$(curl -sL -A "GitHub-Actions-StatusCheck" -o /dev/null -w '%{http_code}' \
+              --max-time 10 --retry 2 --retry-delay 2 "$url" || echo "000")
+            echo "$key ($url) -> HTTP $status"
 
             existing=$(gh issue list --repo "$GH_REPO" --label "$label,auto-outage" --state open \
               --json number --jq '(.[0].number // "")')
@@ -148,27 +130,6 @@ jobs:
               fi
             fi
           done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' apps.json)
-
-          # Prune samples older than 90 days and commit only on the one run
-          # per hour that actually recorded anything — record_latency stays
-          # a plain shell variable (process substitution, not a subshell)
-          # so it's still set here from the loop above.
-          if [[ "$record_latency" == true ]]; then
-            cutoff_epoch=$(date -u -d '-90 days' +%s)
-            latency_json=$(echo "$latency_json" | jq --argjson cutoff "$cutoff_epoch" \
-              'with_entries(.value |= map(select((.t | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime) >= $cutoff)))')
-            echo "$latency_json" > latency-history.json
-            state_json=$(echo "$state_json" | jq --arg h "$current_hour" '._lastLatencyHour = $h')
-
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add latency-history.json
-            if ! git diff --cached --quiet; then
-              git commit -m "Record hourly response-time samples ($current_hour)"
-              git pull --rebase --autostash
-              git push
-            fi
-          fi
 
           # Process substitution (< <(...)) runs the while loop in this same
           # shell, not a subshell, so state_json's accumulated updates are
