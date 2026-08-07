@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.15.0';
+const STATUS_PAGE_VERSION = 'v1.15.1';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -30,11 +30,6 @@ const UPTIME_HISTORY_DAYS = 30;
 
 // Matches the workflow's hourly sampling cadence for latency-history.json.
 const LATENCY_HISTORY_HOURS = 24;
-
-function truncate(text, max) {
-  const clean = (text || '').trim();
-  return clean.length > max ? `${clean.slice(0, max).trim()}…` : clean;
-}
 
 function setBadge(col, online, hasIssue, inMaintenance) {
   const badge = col.querySelector('[data-badge]');
@@ -525,7 +520,7 @@ function renderRecentUpdates(count) {
     const description = document.createElement('p');
     description.dataset.description = '';
     description.className = 'preserve-lines';
-    description.textContent = truncate(issue.body, 300) || 'No further details provided.';
+    description.textContent = issue.body || 'No further details provided.';
 
     const timestamp = document.createElement('p');
     timestamp.dataset.timestamp = '';
