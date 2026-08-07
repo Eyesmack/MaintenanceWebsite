@@ -50,17 +50,36 @@ function parseZonedDateTime(naiveStr, timeZone) {
   return new Date(guessUTC.getTime() - offsetMinutes * 60000);
 }
 
-// Same Maintenance-Start/Maintenance-End convention (and NZ timezone) the
-// status-check workflow looks for when deciding whether to skip filing an
-// outage issue. Returns null if either line is missing/unparseable.
-function extractMaintenanceWindow(body) {
-  const startMatch = (body || '').match(/Maintenance-Start:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-  const endMatch = (body || '').match(/Maintenance-End:\s(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+// Shared by extractMaintenanceWindow/extractIncidentWindow below — same
+// "<Prefix>-Start: YYYY-MM-DD HH:MM" / "<Prefix>-End: ..." shape (NZ time)
+// either way, just a different declared-window convention depending on
+// whether the issue is a planned notice or a real incident. Returns null
+// if either line is missing/unparseable.
+function extractDeclaredWindow(body, prefix) {
+  const startMatch = (body || '').match(new RegExp(`${prefix}-Start:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
+  const endMatch = (body || '').match(new RegExp(`${prefix}-End:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
   if (!startMatch || !endMatch) return null;
   return {
     start: parseZonedDateTime(startMatch[1], 'Pacific/Auckland'),
     end: parseZonedDateTime(endMatch[1], 'Pacific/Auckland'),
   };
+}
+
+// Same Maintenance-Start/Maintenance-End convention the status-check
+// workflow looks for when deciding whether to skip filing an outage issue.
+// For a *planned* notice (the "update" label) — the window is declared
+// ahead of time, before anyone knows exactly how it'll turn out.
+function extractMaintenanceWindow(body) {
+  return extractDeclaredWindow(body, 'Maintenance');
+}
+
+// Incident-Start/Incident-End: the same idea, but for backdating a *real*
+// incident's true start/end after the fact — e.g. the outage actually
+// began hours before anyone got around to filing the issue. Deliberately
+// a separate convention from Maintenance-Start/End (rather than reusing
+// it) so a genuine outage's issue body doesn't read like a planned notice.
+function extractIncidentWindow(body) {
+  return extractDeclaredWindow(body, 'Incident');
 }
 
 // Only issues labeled with a known app name are matched (label match is
@@ -152,10 +171,11 @@ function formatDuration(ms) {
 
 // Planned-maintenance issues get filed ahead of time — the down period is
 // the declared Maintenance-Start/End window, not when the heads-up notice
-// happened to be created. Real incidents never have a parseable window,
-// so this falls through to created_at/closed_at for them exactly as before.
+// happened to be created. A real incident can similarly declare its true
+// Incident-Start/End if it was filed (or closed) well after the fact.
+// Falls through to created_at/closed_at when neither is present.
 function resolveIssueInterval(issue, windowEnd) {
-  const window = extractMaintenanceWindow(issue.body);
+  const window = extractMaintenanceWindow(issue.body) || extractIncidentWindow(issue.body);
   const start = window ? window.start : new Date(issue.created_at);
   const end = window ? window.end : (issue.closed_at ? new Date(issue.closed_at) : windowEnd);
   return [start, end];
