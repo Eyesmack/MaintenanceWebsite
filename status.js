@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.16.1';
+const STATUS_PAGE_VERSION = 'v1.16.2';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -92,7 +92,7 @@ function buildFaviconDataUrl(color) {
 // states — reserved for "something needs your attention".
 function updateFaviconAndTitle(state) {
   document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
-  const prefix = state === 'down' ? '🔴 ' : state === 'partial' ? '⚠️ ' : '';
+  const prefix = state === 'down' ? 'Full Outage | ' : state === 'partial' ? 'Partial Outage | ' : '';
   document.title = `${prefix}${BASE_TITLE}`;
 }
 
