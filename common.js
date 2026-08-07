@@ -50,36 +50,34 @@ function parseZonedDateTime(naiveStr, timeZone) {
   return new Date(guessUTC.getTime() - offsetMinutes * 60000);
 }
 
-// Shared by extractMaintenanceWindow/extractIncidentWindow below — same
-// "<Prefix>-Start: YYYY-MM-DD HH:MM" / "<Prefix>-End: ..." shape (NZ time)
-// either way, just a different declared-window convention depending on
-// whether the issue is a planned notice or a real incident. Returns null
-// if either line is missing/unparseable.
-function extractDeclaredWindow(body, prefix) {
-  const startMatch = (body || '').match(new RegExp(`${prefix}-Start:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
-  const endMatch = (body || '').match(new RegExp(`${prefix}-End:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
-  if (!startMatch || !endMatch) return null;
-  return {
-    start: parseZonedDateTime(startMatch[1], 'Pacific/Auckland'),
-    end: parseZonedDateTime(endMatch[1], 'Pacific/Auckland'),
-  };
+// Parses one "<Label>: YYYY-MM-DD HH:MM" line (NZ time) out of an issue
+// body. Returns null if that line isn't present/parseable.
+function extractDeclaredTimestamp(body, label) {
+  const match = (body || '').match(new RegExp(`${label}:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
+  return match ? parseZonedDateTime(match[1], 'Pacific/Auckland') : null;
 }
 
 // Same Maintenance-Start/Maintenance-End convention the status-check
 // workflow looks for when deciding whether to skip filing an outage issue.
 // For a *planned* notice (the "update" label) — the window is declared
-// ahead of time, before anyone knows exactly how it'll turn out.
+// ahead of time, before anyone knows exactly how it'll turn out — so both
+// ends need to be explicit; returns null unless both lines are present.
 function extractMaintenanceWindow(body) {
-  return extractDeclaredWindow(body, 'Maintenance');
+  const start = extractDeclaredTimestamp(body, 'Maintenance-Start');
+  const end = extractDeclaredTimestamp(body, 'Maintenance-End');
+  return start && end ? { start, end } : null;
 }
 
-// Incident-Start/Incident-End: the same idea, but for backdating a *real*
-// incident's true start/end after the fact — e.g. the outage actually
-// began hours before anyone got around to filing the issue. Deliberately
-// a separate convention from Maintenance-Start/End (rather than reusing
-// it) so a genuine outage's issue body doesn't read like a planned notice.
-function extractIncidentWindow(body) {
-  return extractDeclaredWindow(body, 'Incident');
+// Incident-Start: for backdating a *real* incident's true start after the
+// fact — e.g. the outage actually began hours before anyone got around to
+// filing the issue. Deliberately a separate convention from Maintenance-
+// Start/End (rather than reusing it) so a genuine outage's issue body
+// doesn't read like a planned notice. Start-only: there's no Incident-End
+// — the end is always whenever the issue actually gets closed (see
+// resolveIssueInterval below), not a second declared value, so filing an
+// issue for an outage you caught immediately needs no extra fields at all.
+function extractIncidentStart(body) {
+  return extractDeclaredTimestamp(body, 'Incident-Start');
 }
 
 // Only issues labeled with a known app name are matched (label match is
@@ -171,13 +169,17 @@ function formatDuration(ms) {
 
 // Planned-maintenance issues get filed ahead of time — the down period is
 // the declared Maintenance-Start/End window, not when the heads-up notice
-// happened to be created. A real incident can similarly declare its true
-// Incident-Start/End if it was filed (or closed) well after the fact.
-// Falls through to created_at/closed_at when neither is present.
+// happened to be created. A real incident works differently: only the
+// start can be backdated (Incident-Start, if given — otherwise falls back
+// to created_at); the end is always closed_at/windowEnd regardless, never
+// a second declared value, since there's no Incident-End.
 function resolveIssueInterval(issue, windowEnd) {
-  const window = extractMaintenanceWindow(issue.body) || extractIncidentWindow(issue.body);
-  const start = window ? window.start : new Date(issue.created_at);
-  const end = window ? window.end : (issue.closed_at ? new Date(issue.closed_at) : windowEnd);
+  const maintenanceWindow = extractMaintenanceWindow(issue.body);
+  if (maintenanceWindow) return [maintenanceWindow.start, maintenanceWindow.end];
+
+  const incidentStart = extractIncidentStart(issue.body);
+  const start = incidentStart || new Date(issue.created_at);
+  const end = issue.closed_at ? new Date(issue.closed_at) : windowEnd;
   return [start, end];
 }
 

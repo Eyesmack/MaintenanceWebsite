@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.15.3';
+const STATUS_PAGE_VERSION = 'v1.15.4';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -384,12 +384,13 @@ function timestampText(issue, isUpdate) {
       ? `Expected Outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
-  // Real incidents: resolveIssueInterval prefers a declared Incident-
-  // Start/End window over raw created_at/closed_at when one's present —
-  // unlike the isUpdate case above, a window added here isn't a prediction
-  // made in advance, it's the true start/end backfilled after the fact
-  // (e.g. the outage began hours before anyone got around to filing the
-  // issue), so it's more trustworthy than closed_at/created_at once given.
+  // Real incidents: resolveIssueInterval prefers a declared Incident-Start
+  // over raw created_at when one's present — unlike the isUpdate case
+  // above, a start declared here isn't a prediction made in advance, it's
+  // the true start backfilled after the fact (e.g. the outage began hours
+  // before anyone got around to filing the issue), so it's more
+  // trustworthy than created_at once given. The end is always closed_at/
+  // "now", never a second declared value — see resolveIssueInterval.
   const [start, end] = resolveIssueInterval(issue, new Date());
   if (issue.state === 'closed' && issue.closed_at) {
     return `Down for ${formatDuration(end - start)} — Resolved ${formatTimestamp(end)}`;
