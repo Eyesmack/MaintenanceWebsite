@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.15.1';
+const STATUS_PAGE_VERSION = 'v1.15.2';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -384,27 +384,37 @@ function timestampText(issue, isUpdate) {
       ? `Expected Outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
+  // Real incidents: resolveIssueInterval prefers a declared Maintenance-
+  // Start/End window over raw created_at/closed_at when one's present —
+  // unlike the isUpdate case above, a window added here isn't a prediction
+  // made in advance, it's the true start/end backfilled after the fact
+  // (e.g. the outage began hours before anyone got around to filing the
+  // issue), so it's more trustworthy than closed_at/created_at once given.
+  const [start, end] = resolveIssueInterval(issue, new Date());
   if (issue.state === 'closed' && issue.closed_at) {
-    const duration = formatDuration(new Date(issue.closed_at) - new Date(issue.created_at));
-    return `Down for ${duration} — Resolved ${formatTimestamp(issue.closed_at)}`;
+    return `Down for ${formatDuration(end - start)} — Resolved ${formatTimestamp(end)}`;
   }
-  return `Down since ${formatTimestamp(issue.created_at)}`;
+  return `Down since ${formatTimestamp(start)}`;
 }
 
 // A compact one-line version of timestampText for the accordion header —
 // drops the duration ("Down for Xh Ym —") so it fits alongside the title
 // without needing to expand the item first.
 function shortTimestampText(issue, isUpdate) {
-  if (issue.state === 'closed' && issue.closed_at) {
-    return `Resolved ${formatTimestamp(issue.closed_at)}`;
-  }
   if (isUpdate) {
+    if (issue.state === 'closed' && issue.closed_at) {
+      return `Resolved ${formatTimestamp(issue.closed_at)}`;
+    }
     const window = extractMaintenanceWindow(issue.body);
     return window
       ? `Expected outage: ${formatTimestamp(window.start)}`
       : `Opened ${formatTimestamp(issue.created_at)}`;
   }
-  return `Down since ${formatTimestamp(issue.created_at)}`;
+  const [start, end] = resolveIssueInterval(issue, new Date());
+  if (issue.state === 'closed' && issue.closed_at) {
+    return `Resolved ${formatTimestamp(end)}`;
+  }
+  return `Down since ${formatTimestamp(start)}`;
 }
 
 // Comments are shown so the user can post live debugging updates on an
