@@ -63,12 +63,12 @@ function setAppBadge(online, hasIssue, inMaintenance) {
   const badge = document.getElementById('app-badge');
   if (inMaintenance) {
     badge.textContent = 'Maintenance';
-    badge.className = 'badge rounded-pill bg-info';
+    badge.className = 'badge bg-info';
     return;
   }
   badge.textContent = online ? 'Online' : 'Offline';
   const badgeClass = online && hasIssue ? 'bg-warning' : online ? 'bg-success' : 'bg-danger';
-  badge.className = `badge rounded-pill ${badgeClass}`;
+  badge.className = `badge ${badgeClass}`;
 }
 
 function setAppMessage(online, issues) {
