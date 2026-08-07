@@ -24,10 +24,13 @@ export default {
       return new Response('Forbidden', { status: 403 });
     }
 
+    // The "full" media type adds a body_html field (GitHub's own rendered
+    // HTML) alongside the usual fields, so the page can show real
+    // formatting instead of raw markdown source.
     const upstream = await fetch(`https://api.github.com${url.pathname}${url.search}`, {
       headers: {
         Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
+        Accept: 'application/vnd.github.full+json',
         'User-Agent': 'status-page-proxy',
       },
     });

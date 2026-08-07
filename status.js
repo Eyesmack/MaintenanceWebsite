@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.15.4';
+const STATUS_PAGE_VERSION = 'v1.16.0';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -528,10 +528,20 @@ function renderRecentUpdates(count) {
     affectedApps.className = 'small opacity-75 mb-2';
     affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
 
-    const description = document.createElement('p');
+    // A div, not a <p> — body_html can contain block-level content
+    // (lists, code blocks, multiple paragraphs), which a <p> can't
+    // validly hold (the parser would auto-close it around any nested
+    // block element). Falls back to plain text (not innerHTML) when
+    // body_html isn't present, so raw markdown source is never
+    // accidentally parsed as HTML.
+    const description = document.createElement('div');
     description.dataset.description = '';
-    description.className = 'preserve-lines';
-    description.textContent = issue.body || 'No further details provided.';
+    description.className = 'markdown-body';
+    if (issue.body_html) {
+      description.innerHTML = issue.body_html;
+    } else {
+      description.textContent = issue.body || 'No further details provided.';
+    }
 
     const timestamp = document.createElement('p');
     timestamp.dataset.timestamp = '';
@@ -592,9 +602,14 @@ async function preloadIssueComments(issues) {
         meta.className = 'small opacity-75 mb-0';
         meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
 
-        const commentBody = document.createElement('p');
-        commentBody.className = 'preserve-lines mb-0';
-        commentBody.textContent = comment.body;
+        // A div, not a <p> — same reasoning as the description above.
+        const commentBody = document.createElement('div');
+        commentBody.className = 'markdown-body mb-0';
+        if (comment.body_html) {
+          commentBody.innerHTML = comment.body_html;
+        } else {
+          commentBody.textContent = comment.body;
+        }
 
         wrap.append(meta, commentBody);
         list.appendChild(wrap);
