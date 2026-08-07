@@ -40,7 +40,7 @@ function buildMonthList(startDate, now) {
   return months;
 }
 
-function renderMonthlySummary(appNames, downEventsByApp, months, now) {
+function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStart) {
   const headerRow = document.getElementById('monthly-summary-header');
   const body = document.getElementById('monthly-summary-body');
 
@@ -56,6 +56,11 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now) {
   for (const { year, month } of months) {
     const [monthStart, monthEndRaw] = getMonthBounds(year, month);
     const monthEnd = new Date(Math.min(monthEndRaw.getTime(), now.getTime()));
+    // monthStart is always the calendar month's 1st, but monitoring may have
+    // started partway through it (true only for the oldest row) — clamp so
+    // the uptime% denominator never counts pre-monitoring days as "up" time.
+    // No-op for every later row, whose monthStart is already >= monitoringStart.
+    const monitoredStart = new Date(Math.max(monthStart.getTime(), monitoringStart.getTime()));
 
     const row = document.createElement('tr');
     const monthCell = document.createElement('td');
@@ -63,9 +68,13 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now) {
     row.appendChild(monthCell);
 
     for (const app of appNames) {
-      const downtimeMs = getDowntimeMs(downEventsByApp[app] || [], monthStart, monthEnd);
+      const issues = downEventsByApp[app] || [];
+      const downtimeMs = getDowntimeMs(issues, monitoredStart, monthEnd);
+      const percent = calculateUptimePercent(issues, monitoredStart, monthEnd);
       const cell = document.createElement('td');
-      cell.textContent = downtimeMs > 0 ? formatDuration(downtimeMs) : 'No downtime';
+      cell.textContent = downtimeMs > 0
+        ? `${formatDuration(downtimeMs)} (${percent.toFixed(2)}%)`
+        : `No downtime (${percent.toFixed(2)}%)`;
       row.appendChild(cell);
     }
 
@@ -153,9 +162,10 @@ async function init() {
   const { recentIssues, downEventsByApp } = await fetchAppIssues(appNames);
 
   const now = new Date();
-  const months = buildMonthList(new Date(MONITORING_START_DATE), now);
+  const monitoringStart = new Date(MONITORING_START_DATE);
+  const months = buildMonthList(monitoringStart, now);
 
-  renderMonthlySummary(appNames, downEventsByApp, months, now);
+  renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStart);
   const hasIncidents = renderIncidentMonths(recentIssues, months);
 
   const status = document.getElementById('history-status');
