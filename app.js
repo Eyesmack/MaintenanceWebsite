@@ -2,11 +2,13 @@
 // the `app` query param matched against apps.json's keys. Mirrors
 // status.js's live-refresh architecture (refreshAppStatus/scheduleRefresh)
 // scoped to one fixed set of elements instead of one card per app.
-// Rendering is intentionally NOT shared with status.js — same "each page
-// owns its rendering" convention history.js already established (see its
-// renderIncidentItem vs. status.js's renderRecentUpdates). Only
-// common.js's data/math layer is shared. If either copy's accordion/badge
-// logic changes, update both by hand.
+// The Recent Updates accordion and the uptime history strip are shared
+// with status.js via common.js's renderIssueAccordion/renderUptimeStrip —
+// they were byte-identical, unlike history.js's renderIncidentItem, which
+// is a genuinely different layout and stays page-local by design. The
+// badge/message/favicon rendering below (setAppBadge, setAppMessage,
+// updateFaviconAndTitle) stays page-local too — different DOM targets
+// than status.js's per-card versions, and slated for its own redesign.
 
 const APP_UPTIME_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // matches status.js's UPTIME_TIMEFRAMES['1m']
 const APP_UPTIME_HISTORY_DAYS = 90;
@@ -106,248 +108,27 @@ function renderAppUptimePercent(issues) {
   document.getElementById('app-uptime-percent').textContent = `${percent.toFixed(2)}% uptime (1 Month)`;
 }
 
-// Adapted from status.js's renderUptimeHistory (status.js:287-326): same
-// per-day loop and tooltip logic, APP_UPTIME_HISTORY_DAYS instead of 30,
-// targeting this page's single #app-uptime-history container directly.
+// Adapted from status.js's renderUptimeHistory: same shared day-square
+// strip (common.js's renderUptimeStrip), APP_UPTIME_HISTORY_DAYS instead
+// of 30, targeting this page's single #app-uptime-history container.
 function renderAppUptimeHistory(issues) {
   const container = document.getElementById('app-uptime-history');
-  const monitoringStart = new Date(MONITORING_START_DATE);
-  const now = new Date();
-
-  container.innerHTML = '';
-  for (let i = APP_UPTIME_HISTORY_DAYS - 1; i >= 0; i--) {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
-    dayStart.setDate(dayStart.getDate() - i);
-    const dayEnd = new Date(Math.min(dayStart.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
-
-    const day = document.createElement('div');
-    day.className = 'flex-fill rounded-1';
-    day.setAttribute('data-bs-toggle', 'tooltip');
-
-    if (dayStart < monitoringStart) {
-      day.classList.add('bg-secondary');
-      day.title = `${dayStart.toLocaleDateString()} — No data (before monitoring began)`;
-    } else {
-      const percent = calculateUptimePercent(issues, dayStart, dayEnd);
-      day.classList.add(percent === 100 ? 'bg-success' : 'bg-danger');
-      day.title = `${dayStart.toLocaleDateString()} — ${percent.toFixed(2)}% uptime`;
-    }
-    container.appendChild(day);
-  }
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
-}
-
-// timestampText/shortTimestampText/fetchIssueComments/preloadIssueComments/
-// fingerprintRecentIssues below are copied verbatim from status.js
-// (status.js:371-419, 427-439, 574-621, 627-629) — zero status.js-specific
-// dependencies, so a straight copy is correct as-is.
-
-function timestampText(issue, isUpdate) {
-  if (isUpdate) {
-    if (issue.state === 'closed' && issue.closed_at) return `Resolved ${formatTimestamp(issue.closed_at)}`;
-    const window = extractMaintenanceWindow(issue.body);
-    return window ? `Expected Outage: ${formatTimestamp(window.start)}` : `Opened ${formatTimestamp(issue.created_at)}`;
-  }
-  const [start, end] = resolveIssueInterval(issue, new Date());
-  if (issue.state === 'closed' && issue.closed_at) {
-    return `Down for ${formatDuration(end - start)} — Resolved ${formatTimestamp(end)}`;
-  }
-  return `Down since ${formatTimestamp(start)}`;
-}
-
-function shortTimestampText(issue, isUpdate) {
-  if (isUpdate) {
-    if (issue.state === 'closed' && issue.closed_at) return `Resolved ${formatTimestamp(issue.closed_at)}`;
-    const window = extractMaintenanceWindow(issue.body);
-    return window ? `Expected outage: ${formatTimestamp(window.start)}` : `Opened ${formatTimestamp(issue.created_at)}`;
-  }
-  const [start, end] = resolveIssueInterval(issue, new Date());
-  if (issue.state === 'closed' && issue.closed_at) return `Resolved ${formatTimestamp(end)}`;
-  return `Down since ${formatTimestamp(start)}`;
-}
-
-const issueCommentsCache = new Map();
-
-async function fetchIssueComments(issueNumber) {
-  try {
-    const res = await fetch(
-      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments?per_page=100`,
-      { headers: { Accept: 'application/vnd.github+json' } }
-    );
-    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
-    return res.json();
-  } catch (err) {
-    console.warn(`Could not fetch comments for issue #${issueNumber}`, err);
-    return [];
-  }
-}
-
-async function preloadIssueComments(issues) {
-  const accordion = document.getElementById('recent-updates-accordion');
-  await Promise.all(
-    issues.map(async ({ issue }) => {
-      if (!issueCommentsCache.has(issue.number)) {
-        issueCommentsCache.set(issue.number, await fetchIssueComments(issue.number));
-      }
-      const comments = issueCommentsCache.get(issue.number);
-      if (!comments.length) return;
-
-      const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
-      if (!body || body.querySelector('[data-comments]')) return;
-
-      const list = document.createElement('div');
-      list.dataset.comments = '';
-      list.className = 'mt-2';
-
-      const label = document.createElement('p');
-      label.className = 'small opacity-75 mb-1';
-      label.textContent = 'Updates:';
-      list.appendChild(label);
-
-      for (const comment of comments) {
-        const wrap = document.createElement('div');
-        wrap.className = 'comment-box p-2 mb-2';
-        const edited = comment.updated_at !== comment.created_at;
-        const meta = document.createElement('p');
-        meta.className = 'small opacity-75 mb-0';
-        meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
-        const commentBody = document.createElement('div');
-        commentBody.className = 'markdown-body mb-0';
-        if (comment.body_html) { commentBody.innerHTML = comment.body_html; }
-        else { commentBody.textContent = comment.body; }
-        wrap.append(meta, commentBody);
-        list.appendChild(wrap);
-      }
-      body.querySelector('[data-timestamp]').before(list);
-    })
-  );
-}
-
-function fingerprintRecentIssues(recentIssues) {
-  return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
-}
-
-// Adapted from status.js's renderRecentUpdates (status.js:441-566): takes
-// the already-filtered-to-this-app issue list directly instead of slicing
-// a cached list by a user-selected count (no Last-5/10 selector here —
-// one app's history is short enough to show in full). Otherwise
-// identical, including the expand-state capture/restore that keeps an
-// open item open across the 60s refresh.
-function renderAppRecentUpdates(issues) {
-  const section = document.getElementById('recent-updates');
-  const accordion = document.getElementById('recent-updates-accordion');
-
-  if (!issues.length) {
-    section.classList.add('d-none');
-    return;
-  }
-
-  const expandedIssueNumbers = new Set(
-    Array.from(accordion.querySelectorAll('.accordion-item'))
-      .filter((item) => item.querySelector('.accordion-collapse')?.classList.contains('show'))
-      .map((item) => item.dataset.issueNumber)
-  );
-
-  accordion.innerHTML = '';
-  for (const { apps, issue, isUpdate } of issues) {
-    const collapseId = `ru-collapse-${issue.number}`;
-
-    const item = document.createElement('div');
-    item.className = 'accordion-item';
-    item.dataset.issueNumber = String(issue.number);
-
-    const header = document.createElement('h2');
-    header.className = 'accordion-header d-flex align-items-center';
-
-    const button = document.createElement('button');
-    button.className = 'accordion-button collapsed flex-grow-1';
-    button.type = 'button';
-    button.setAttribute('data-bs-toggle', 'collapse');
-    button.setAttribute('data-bs-target', `#${collapseId}`);
-    button.setAttribute('aria-expanded', 'false');
-    button.setAttribute('aria-controls', collapseId);
-
-    const titleWrap = document.createElement('span');
-    titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
-    const titleText = document.createElement('span');
-    titleText.append(`${issue.title} - `);
-    const titleTimestamp = document.createElement('span');
-    titleTimestamp.className = 'opacity-75';
-    titleTimestamp.textContent = shortTimestampText(issue, isUpdate);
-    titleText.appendChild(titleTimestamp);
-
-    const stateBadge = document.createElement('span');
-    if (isUpdate && issue.state === 'open') {
-      stateBadge.className = 'badge bg-info me-2';
-      stateBadge.textContent = 'Planned';
-    } else {
-      stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
-      stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
-    }
-    titleWrap.append(titleText, stateBadge);
-    button.appendChild(titleWrap);
-
-    const issueLink = document.createElement('a');
-    issueLink.href = issue.html_url;
-    issueLink.target = '_blank';
-    issueLink.rel = 'noopener';
-    issueLink.className = 'accordion-link-btn ms-2 me-2';
-    issueLink.title = 'View on GitHub';
-    issueLink.setAttribute('aria-label', 'View issue on GitHub');
-    issueLink.textContent = '↗';
-    header.append(button, issueLink);
-
-    const collapse = document.createElement('div');
-    collapse.id = collapseId;
-    collapse.className = 'accordion-collapse collapse';
-
-    const collapseBody = document.createElement('div');
-    collapseBody.className = 'accordion-body';
-
-    const affectedApps = document.createElement('p');
-    affectedApps.className = 'small opacity-75 mb-2';
-    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
-
-    const description = document.createElement('div');
-    description.dataset.description = '';
-    description.className = 'markdown-body';
-    if (issue.body_html) { description.innerHTML = issue.body_html; }
-    else { description.textContent = issue.body || 'No further details provided.'; }
-
-    const timestamp = document.createElement('p');
-    timestamp.dataset.timestamp = '';
-    timestamp.className = 'small opacity-75 mb-0';
-    timestamp.textContent = timestampText(issue, isUpdate);
-
-    collapseBody.append(affectedApps, description, timestamp);
-    collapse.appendChild(collapseBody);
-
-    if (expandedIssueNumbers.has(String(issue.number))) {
-      button.classList.remove('collapsed');
-      button.setAttribute('aria-expanded', 'true');
-      collapse.classList.add('show');
-    }
-
-    item.append(header, collapse);
-    accordion.appendChild(item);
-  }
-
-  section.classList.remove('d-none');
-  preloadIssueComments(issues);
+  renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
 }
 
 let cachedFingerprint = null;
 
 // Adapted from status.js's updateRecentUpdates: same fingerprint-diff
 // skip, so an unchanged issue set doesn't rebuild the accordion (and
-// doesn't clear issueCommentsCache) on every 60s tick.
+// doesn't clear issueCommentsCache) on every 60s tick. No page-local
+// render wrapper needed here (unlike status.js) — there's no count/
+// slicing step, so this calls common.js's renderIssueAccordion directly.
 function updateAppRecentUpdates(recentIssues) {
   const fingerprint = fingerprintRecentIssues(recentIssues);
   if (fingerprint === cachedFingerprint) return;
   cachedFingerprint = fingerprint;
   issueCommentsCache.clear();
-  renderAppRecentUpdates(recentIssues);
+  renderIssueAccordion(recentIssues);
 }
 
 async function refreshAppPage() {

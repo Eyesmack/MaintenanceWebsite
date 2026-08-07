@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.17.1';
+const STATUS_PAGE_VERSION = 'v1.17.2';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -13,8 +13,10 @@ let faviconDataUrlCache = {};
 
 // loadApps, GITHUB_REPO, GITHUB_PROXY_BASE, MONITORING_START_DATE,
 // getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
-// and fetchAppIssues now live in common.js (loaded before this file),
-// shared with history.js.
+// fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
+// fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
+// renderIssueAccordion, and renderUptimeStrip now live in common.js
+// (loaded before this file), shared with history.js and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -285,48 +287,11 @@ function initUptimeTimeframeSelector() {
 }
 
 // Fixed-length day-by-day history strip, independent of the timeframe
-// selector above — same convention as most status pages (Upptime,
-// UptimeRobot, Cachet). Reuses calculateUptimePercent per day rather than
-// duplicating the downtime math.
+// selector above — see common.js's renderUptimeStrip for the shared loop.
 function renderUptimeHistory(app) {
   const container = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime-history]`);
   if (!container) return;
-
-  const issues = cachedDownEventsByApp[app] || [];
-  const monitoringStart = new Date(MONITORING_START_DATE);
-  const now = new Date();
-
-  container.innerHTML = '';
-  for (let i = UPTIME_HISTORY_DAYS - 1; i >= 0; i--) {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
-    dayStart.setDate(dayStart.getDate() - i);
-    // Clamp today's bucket to the real current time — otherwise a still-
-    // open issue (whose down-period defaults to whatever windowEnd is
-    // passed in) would look like it extends all the way to midnight
-    // tonight, i.e. into the future.
-    const dayEnd = new Date(Math.min(dayStart.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
-
-    const day = document.createElement('div');
-    day.className = 'flex-fill rounded-1';
-    day.setAttribute('data-bs-toggle', 'tooltip');
-
-    if (dayStart < monitoringStart) {
-      day.classList.add('bg-secondary');
-      day.title = `${dayStart.toLocaleDateString()} — No data (before monitoring began)`;
-    } else {
-      const percent = calculateUptimePercent(issues, dayStart, dayEnd);
-      day.classList.add(percent === 100 ? 'bg-success' : 'bg-danger');
-      day.title = `${dayStart.toLocaleDateString()} — ${percent.toFixed(2)}% uptime`;
-    }
-
-    container.appendChild(day);
-  }
-
-  // Bootstrap tooltips are opt-in — each trigger element needs its own
-  // instance. Its Tooltip JS takes over the `title` attribute (removing it
-  // from native-tooltip duty) once initialized.
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+  renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
 }
 
 // Bar height (not color) encodes relative latency — unlike uptime, a
@@ -372,264 +337,11 @@ function getUptimeWindow(timeframeKey, now) {
   return [start, now];
 }
 
-function timestampText(issue, isUpdate) {
-  if (isUpdate) {
-    if (issue.state === 'closed' && issue.closed_at) {
-      // Closed planned maintenance: this is factual completion info, not
-      // a prediction, so it stays as-is.
-      return `Resolved ${formatTimestamp(issue.closed_at)}`;
-    }
-    // Still open: show when the outage is actually expected (parsed from
-    // the same Maintenance-Start convention the workflow itself uses),
-    // not when this GitHub issue happened to be filed. Falls back to the
-    // filing time if the body doesn't declare a parseable window.
-    const window = extractMaintenanceWindow(issue.body);
-    return window
-      ? `Expected Outage: ${formatTimestamp(window.start)}`
-      : `Opened ${formatTimestamp(issue.created_at)}`;
-  }
-  // Real incidents: resolveIssueInterval prefers a declared Incident-Start
-  // over raw created_at when one's present — unlike the isUpdate case
-  // above, a start declared here isn't a prediction made in advance, it's
-  // the true start backfilled after the fact (e.g. the outage began hours
-  // before anyone got around to filing the issue), so it's more
-  // trustworthy than created_at once given. The end is always closed_at/
-  // "now", never a second declared value — see resolveIssueInterval.
-  const [start, end] = resolveIssueInterval(issue, new Date());
-  if (issue.state === 'closed' && issue.closed_at) {
-    return `Down for ${formatDuration(end - start)} — Resolved ${formatTimestamp(end)}`;
-  }
-  return `Down since ${formatTimestamp(start)}`;
-}
-
-// A compact one-line version of timestampText for the accordion header —
-// drops the duration ("Down for Xh Ym —") so it fits alongside the title
-// without needing to expand the item first.
-function shortTimestampText(issue, isUpdate) {
-  if (isUpdate) {
-    if (issue.state === 'closed' && issue.closed_at) {
-      return `Resolved ${formatTimestamp(issue.closed_at)}`;
-    }
-    const window = extractMaintenanceWindow(issue.body);
-    return window
-      ? `Expected outage: ${formatTimestamp(window.start)}`
-      : `Opened ${formatTimestamp(issue.created_at)}`;
-  }
-  const [start, end] = resolveIssueInterval(issue, new Date());
-  if (issue.state === 'closed' && issue.closed_at) {
-    return `Resolved ${formatTimestamp(end)}`;
-  }
-  return `Down since ${formatTimestamp(start)}`;
-}
-
-// Comments are shown so the user can post live debugging updates on an
-// outage issue and have them appear here as they're added, not just a
-// final "closing comment". Cached per issue number so switching the
-// Recent Updates count back and forth never re-fetches.
-const issueCommentsCache = new Map();
-
-async function fetchIssueComments(issueNumber) {
-  try {
-    const res = await fetch(
-      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues/${issueNumber}/comments?per_page=100`,
-      { headers: { Accept: 'application/vnd.github+json' } }
-    );
-    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
-    return res.json();
-  } catch (err) {
-    console.warn(`Could not fetch comments for issue #${issueNumber}`, err);
-    return [];
-  }
-}
-
+// Re-slices the cached full issue list by the selected count and hands
+// off to the shared accordion renderer (common.js) — count/slicing is the
+// only status.js-specific piece here; see cachedRecentIssues above.
 function renderRecentUpdates(count) {
-  const section = document.getElementById('recent-updates');
-  const accordion = document.getElementById('recent-updates-accordion');
-
-  if (!cachedRecentIssues.length) {
-    section.classList.add('d-none');
-    return;
-  }
-
-  // Capture which items are currently expanded so the rebuild below (which
-  // happens on every fingerprint change from the auto-refresh loop, not
-  // just a manual count-selector change) doesn't snap them back closed —
-  // e.g. someone watching a big ongoing issue for new comments shouldn't
-  // have it collapse out from under them the moment one arrives.
-  const expandedIssueNumbers = new Set(
-    Array.from(accordion.querySelectorAll('.accordion-item'))
-      .filter((item) => item.querySelector('.accordion-collapse')?.classList.contains('show'))
-      .map((item) => item.dataset.issueNumber)
-  );
-
-  accordion.innerHTML = '';
-  const toRender = cachedRecentIssues.slice(0, count);
-  for (const { apps, issue, isUpdate } of toRender) {
-    const collapseId = `ru-collapse-${issue.number}`;
-
-    const item = document.createElement('div');
-    item.className = 'accordion-item';
-    item.dataset.issueNumber = String(issue.number);
-
-    // A flex row: the toggle button (still the only click target for
-    // expand/collapse) plus a separate link icon after it. The link can't
-    // live inside the button itself — nested interactive elements are
-    // invalid HTML and the click would also toggle the accordion.
-    const header = document.createElement('h2');
-    header.className = 'accordion-header d-flex align-items-center';
-
-    const button = document.createElement('button');
-    button.className = 'accordion-button collapsed flex-grow-1';
-    button.type = 'button';
-    button.setAttribute('data-bs-toggle', 'collapse');
-    button.setAttribute('data-bs-target', `#${collapseId}`);
-    button.setAttribute('aria-expanded', 'false');
-    button.setAttribute('aria-controls', collapseId);
-
-    const titleWrap = document.createElement('span');
-    titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
-    const titleText = document.createElement('span');
-    titleText.append(`${issue.title} - `);
-    const titleTimestamp = document.createElement('span');
-    titleTimestamp.className = 'opacity-75';
-    titleTimestamp.textContent = shortTimestampText(issue, isUpdate);
-    titleText.appendChild(titleTimestamp);
-
-    const stateBadge = document.createElement('span');
-    if (isUpdate && issue.state === 'open') {
-      stateBadge.className = 'badge bg-info me-2';
-      stateBadge.textContent = 'Planned';
-    } else {
-      // A closed planned-maintenance issue is just Resolved, same as any
-      // other closed issue — "Planned" only makes sense while it's open.
-      stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
-      stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
-    }
-    titleWrap.append(titleText, stateBadge);
-    button.appendChild(titleWrap);
-
-    const issueLink = document.createElement('a');
-    issueLink.href = issue.html_url;
-    issueLink.target = '_blank';
-    issueLink.rel = 'noopener';
-    issueLink.className = 'accordion-link-btn ms-2 me-2';
-    issueLink.title = 'View on GitHub';
-    issueLink.setAttribute('aria-label', 'View issue on GitHub');
-    issueLink.textContent = '↗';
-
-    header.append(button, issueLink);
-
-    // No data-bs-parent: "Always Open" accordion — expanding one item
-    // doesn't collapse the others.
-    const collapse = document.createElement('div');
-    collapse.id = collapseId;
-    collapse.className = 'accordion-collapse collapse';
-
-    const collapseBody = document.createElement('div');
-    collapseBody.className = 'accordion-body';
-
-    const affectedApps = document.createElement('p');
-    affectedApps.className = 'small opacity-75 mb-2';
-    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
-
-    // A div, not a <p> — body_html can contain block-level content
-    // (lists, code blocks, multiple paragraphs), which a <p> can't
-    // validly hold (the parser would auto-close it around any nested
-    // block element). Falls back to plain text (not innerHTML) when
-    // body_html isn't present, so raw markdown source is never
-    // accidentally parsed as HTML.
-    const description = document.createElement('div');
-    description.dataset.description = '';
-    description.className = 'markdown-body';
-    if (issue.body_html) {
-      description.innerHTML = issue.body_html;
-    } else {
-      description.textContent = issue.body || 'No further details provided.';
-    }
-
-    const timestamp = document.createElement('p');
-    timestamp.dataset.timestamp = '';
-    timestamp.className = 'small opacity-75 mb-0';
-    timestamp.textContent = timestampText(issue, isUpdate);
-
-    collapseBody.append(affectedApps, description, timestamp);
-    collapse.appendChild(collapseBody);
-
-    if (expandedIssueNumbers.has(String(issue.number))) {
-      button.classList.remove('collapsed');
-      button.setAttribute('aria-expanded', 'true');
-      collapse.classList.add('show');
-    }
-
-    item.append(header, collapse);
-    accordion.appendChild(item);
-  }
-
-  section.classList.remove('d-none');
-  preloadIssueComments(toRender);
-}
-
-// Fetches comments for every currently rendered issue (open or closed —
-// a debugging update can be posted at any point, not just when closing),
-// in parallel, and injects each issue's comment list as soon as it
-// resolves — rather than waiting for the user to expand that item.
-// issueCommentsCache dedupes across calls, so switching the Recent
-// Updates count back and forth never re-fetches an issue already loaded.
-async function preloadIssueComments(issues) {
-  const accordion = document.getElementById('recent-updates-accordion');
-  await Promise.all(
-    issues.map(async ({ issue }) => {
-      if (!issueCommentsCache.has(issue.number)) {
-        issueCommentsCache.set(issue.number, await fetchIssueComments(issue.number));
-      }
-      const comments = issueCommentsCache.get(issue.number);
-      if (!comments.length) return;
-
-      const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
-      if (!body || body.querySelector('[data-comments]')) return;
-
-      const list = document.createElement('div');
-      list.dataset.comments = '';
-      list.className = 'mt-2';
-
-      const label = document.createElement('p');
-      label.className = 'small opacity-75 mb-1';
-      label.textContent = 'Updates:';
-      list.appendChild(label);
-
-      for (const comment of comments) {
-        const wrap = document.createElement('div');
-        wrap.className = 'comment-box p-2 mb-2';
-
-        const edited = comment.updated_at !== comment.created_at;
-        const meta = document.createElement('p');
-        meta.className = 'small opacity-75 mb-0';
-        meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
-
-        // A div, not a <p> — same reasoning as the description above.
-        const commentBody = document.createElement('div');
-        commentBody.className = 'markdown-body mb-0';
-        if (comment.body_html) {
-          commentBody.innerHTML = comment.body_html;
-        } else {
-          commentBody.textContent = comment.body;
-        }
-
-        wrap.append(meta, commentBody);
-        list.appendChild(wrap);
-      }
-
-      body.querySelector('[data-timestamp]').before(list);
-    })
-  );
-}
-
-// Only each rendered issue's (number, state, updated_at) is compared —
-// GitHub bumps updated_at on edits, closes, and new comments alike, so
-// this catches "something changed" (including new comments) without a
-// separate comments diff.
-function fingerprintRecentIssues(recentIssues) {
-  return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
+  renderIssueAccordion(cachedRecentIssues.slice(0, count));
 }
 
 // Skips rebuilding the accordion when nothing has changed since the last
