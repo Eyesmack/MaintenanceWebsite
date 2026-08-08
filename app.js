@@ -252,6 +252,7 @@ async function init() {
   targetApp = getRequestedAppName(apps);
 
   document.getElementById('app-loading').classList.add('d-none');
+  document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;
 
   if (!targetApp) {
     renderNotFound(); // No GitHub proxy fetch — nothing to look up.

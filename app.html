@@ -40,7 +40,7 @@
                   <span class="small version-text">Last 90 Days</span>
                 </div>
                 <div class="sub-card rounded p-3 mb-4">
-                  <p class="text text-center fs-2 mb-2" id="app-uptime-percent">Calculating…</p>
+                  <p class="text text-center fs-3 mb-2" id="app-uptime-percent">Calculating…</p>
                   <div class="d-flex gap-1" style="height: 30px;" id="app-uptime-history"></div>
                 </div>
 
@@ -48,19 +48,19 @@
                 <div class="sub-card rounded p-3 mb-4">
                   <div class="row row-cols-2 row-cols-sm-4 g-3 text-center">
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-uptime-24h">—</p>
+                      <p class="fs-4 text mb-0" id="app-uptime-24h">—</p>
                       <p class="small version-text mb-0">24 Hours</p>
                     </div>
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-uptime-7d">—</p>
+                      <p class="fs-4 text mb-0" id="app-uptime-7d">—</p>
                       <p class="small version-text mb-0">7 Days</p>
                     </div>
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-uptime-30d">—</p>
+                      <p class="fs-4 text mb-0" id="app-uptime-30d">—</p>
                       <p class="small version-text mb-0">30 Days</p>
                     </div>
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-uptime-90d">—</p>
+                      <p class="fs-4 text mb-0" id="app-uptime-90d">—</p>
                       <p class="small version-text mb-0">90 Days</p>
                     </div>
                   </div>
@@ -68,7 +68,7 @@
 
                 <div class="d-flex align-items-baseline gap-2 mb-2">
                   <h5 class="text mb-0">Response Time</h5>
-                  <span class="small version-text">Last 24 Hours</span>
+                  <span class="small version-text">Last 90 Days</span>
                 </div>
                 <div class="sub-card rounded p-3 mb-4">
                   <div class="latency-graph-placeholder d-flex align-items-center justify-content-center version-text small text-center rounded mb-3">
@@ -76,15 +76,15 @@
                   </div>
                   <div class="row row-cols-3 g-3 text-center">
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-latency-avg">—</p>
+                      <p class="fs-4 text mb-0" id="app-latency-avg">—</p>
                       <p class="small version-text mb-0">Avg (90d)</p>
                     </div>
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-latency-max">—</p>
+                      <p class="fs-4 text mb-0" id="app-latency-max">—</p>
                       <p class="small version-text mb-0">Max (90d)</p>
                     </div>
                     <div class="col">
-                      <p class="fs-4 text mb-1" id="app-latency-min">—</p>
+                      <p class="fs-4 text mb-0" id="app-latency-min">—</p>
                       <p class="small version-text mb-0">Min (90d)</p>
                     </div>
                   </div>
@@ -95,6 +95,9 @@
                   <div class="accordion" id="recent-updates-accordion"></div>
                 </div>
               </div>
+            </div>
+            <div class="card-footer version-text">
+              <small id="version-text"></small>
             </div>
           </div>
         </div>

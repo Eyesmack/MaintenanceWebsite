@@ -157,6 +157,8 @@ function renderIncidentMonths(recentIssues, months) {
 }
 
 async function init() {
+  document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;
+
   const apps = await loadApps();
   const appNames = Object.keys(apps);
   const { recentIssues, downEventsByApp } = await fetchAppIssues(appNames);

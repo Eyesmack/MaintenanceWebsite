@@ -3,6 +3,11 @@
 // math, so both pages agree on exactly the same rules rather than each
 // re-implementing (and risking drifting from) this logic independently.
 
+// Bumped by hand whenever status.js/app.js or their HTML changes — shown
+// in both index.html's and app.html's footers, and used by status.js's
+// checkForNewVersion to detect when a newer deploy is live.
+const STATUS_PAGE_VERSION = 'v1.18.2';
+
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
 async function loadApps() {

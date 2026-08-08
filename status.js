@@ -1,7 +1,3 @@
-// Bump this by hand whenever you change status.js/index.html, so the footer
-// tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.18.1';
-
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
 const BASE_TITLE = document.title;
@@ -15,9 +11,9 @@ let faviconDataUrlCache = {};
 // getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
 // fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
-// renderIssueAccordion, renderUptimeStrip, and fetchLatencyHistory now
-// live in common.js (loaded before this file), shared with history.js
-// and/or app.js.
+// renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory, and
+// STATUS_PAGE_VERSION now live in common.js (loaded before this file),
+// shared with history.js and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -400,14 +396,14 @@ async function refreshAppStatus() {
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
-// Re-fetches the page's own live status.js (cache-busted) and compares its
-// STATUS_PAGE_VERSION to the one already running. Checking the live file
-// itself, rather than the repo/API, means this only ever reloads once a
-// new deploy is actually being served — no false positive during GitHub
-// Pages' own build/propagation lag right after a push.
+// Re-fetches the page's own live common.js (cache-busted) and compares
+// its STATUS_PAGE_VERSION to the one already running. Checking the live
+// file itself, rather than the repo/API, means this only ever reloads
+// once a new deploy is actually being served — no false positive during
+// GitHub Pages' own build/propagation lag right after a push.
 async function checkForNewVersion() {
   try {
-    const res = await fetch(`status.js?v=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`common.js?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return false;
     const text = await res.text();
     const match = text.match(/const STATUS_PAGE_VERSION = '([^']+)'/);
