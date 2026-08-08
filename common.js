@@ -10,6 +10,19 @@ async function loadApps() {
   return res.json();
 }
 
+// latency-history.json is committed by the workflow (see status-check.yml)
+// once an hour — a plain same-origin static file, like apps.json, so this
+// needs no Cloudflare Worker/GitHub API involvement and no rate-limit use.
+async function fetchLatencyHistory() {
+  try {
+    const res = await fetch(`latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 // Open issues in this repo labeled with an app key (e.g. "notflix")
 // are treated as manual status updates and shown on that app's card.
 const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };

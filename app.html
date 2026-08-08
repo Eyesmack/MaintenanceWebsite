@@ -17,8 +17,6 @@
               <small><a href="./" class="version-text">&larr; Back to Status</a></small>
             </div>
             <div class="card-body">
-              <img src="logo.png" alt="Undiscovered Land Studios logo" class="logo-img mb-3">
-
               <p class="text" id="app-loading">Loading app status…</p>
 
               <div id="app-not-found" class="d-none">
@@ -26,22 +24,70 @@
                 <p class="lead mb-0 text" id="app-not-found-message">This app could not be found.</p>
               </div>
 
-              <div id="app-found" class="d-none">
-                <h1 class="text" id="app-heading">
-                  <span id="app-name"></span>
-                  <span class="badge bg-secondary" id="app-badge">Checking…</span>
+              <div id="app-found" class="d-none text-start">
+                <h1 class="text mb-0" id="app-heading">
+                  <span id="app-name"></span> is <span id="app-state"></span>
                 </h1>
-                <p class="lead mb-3 text" id="app-message"></p>
+                <p class="small version-text mb-4">Checked every minute</p>
 
-                <div class="text-start">
-                  <p class="text small mb-0" id="app-uptime-percent">Calculating…</p>
-                  <p class="small text mb-1 mt-2">Uptime History (Last 90 Days)</p>
+                <div class="d-flex align-items-baseline gap-2 mb-2">
+                  <h5 class="text mb-0">Uptime</h5>
+                  <span class="small version-text">Last 90 Days</span>
+                </div>
+                <div class="sub-card rounded p-3 mb-4">
+                  <p class="text text-center mb-2" id="app-uptime-percent">Calculating…</p>
                   <div class="d-flex gap-1" style="height: 30px;" id="app-uptime-history"></div>
+                </div>
 
-                  <div id="recent-updates" class="mt-4 d-none">
-                    <h5 class="text mb-3">Recent Updates</h5>
-                    <div class="accordion" id="recent-updates-accordion"></div>
+                <h5 class="text mb-2">Overall Uptime</h5>
+                <div class="sub-card rounded p-3 mb-4">
+                  <div class="row row-cols-2 row-cols-sm-4 g-3 text-center">
+                    <div class="col">
+                      <p class="small version-text mb-1">24 Hours</p>
+                      <p class="text mb-0" id="app-uptime-24h">—</p>
+                    </div>
+                    <div class="col">
+                      <p class="small version-text mb-1">7 Days</p>
+                      <p class="text mb-0" id="app-uptime-7d">—</p>
+                    </div>
+                    <div class="col">
+                      <p class="small version-text mb-1">30 Days</p>
+                      <p class="text mb-0" id="app-uptime-30d">—</p>
+                    </div>
+                    <div class="col">
+                      <p class="small version-text mb-1">90 Days</p>
+                      <p class="text mb-0" id="app-uptime-90d">—</p>
+                    </div>
                   </div>
+                </div>
+
+                <div class="d-flex align-items-baseline gap-2 mb-2">
+                  <h5 class="text mb-0">Response Time</h5>
+                  <span class="small version-text">Last 24 Hours</span>
+                </div>
+                <div class="sub-card rounded p-3 mb-4">
+                  <div class="latency-graph-placeholder d-flex align-items-center justify-content-center version-text small text-center rounded mb-3">
+                    Response time graph coming soon
+                  </div>
+                  <div class="row row-cols-3 g-3 text-center">
+                    <div class="col">
+                      <p class="small version-text mb-1">Avg (90d)</p>
+                      <p class="text mb-0" id="app-latency-avg">—</p>
+                    </div>
+                    <div class="col">
+                      <p class="small version-text mb-1">Max (90d)</p>
+                      <p class="text mb-0" id="app-latency-max">—</p>
+                    </div>
+                    <div class="col">
+                      <p class="small version-text mb-1">Min (90d)</p>
+                      <p class="text mb-0" id="app-latency-min">—</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="recent-updates" class="d-none">
+                  <h5 class="text mb-3">Recent Events</h5>
+                  <div class="accordion" id="recent-updates-accordion"></div>
                 </div>
               </div>
             </div>

@@ -1,6 +1,6 @@
 // Bump this by hand whenever you change status.js/index.html, so the footer
 // tells you which version of the page a visitor (or you) is actually seeing.
-const STATUS_PAGE_VERSION = 'v1.17.2';
+const STATUS_PAGE_VERSION = 'v1.18.0';
 
 // Captured once, before status.js ever changes it, so index.html's
 // <title> stays the single source of truth for the page's base title.
@@ -15,8 +15,9 @@ let faviconDataUrlCache = {};
 // getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
 // fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
-// renderIssueAccordion, and renderUptimeStrip now live in common.js
-// (loaded before this file), shared with history.js and/or app.js.
+// renderIssueAccordion, renderUptimeStrip, and fetchLatencyHistory now
+// live in common.js (loaded before this file), shared with history.js
+// and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -398,19 +399,6 @@ async function refreshAppStatus() {
 }
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
-
-// latency-history.json is committed by the workflow (see status-check.yml)
-// once an hour — a plain same-origin static file, like apps.json, so this
-// needs no Cloudflare Worker/GitHub API involvement and no rate-limit use.
-async function fetchLatencyHistory() {
-  try {
-    const res = await fetch(`latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return {};
-    return await res.json();
-  } catch {
-    return {};
-  }
-}
 
 // Re-fetches the page's own live status.js (cache-busted) and compares its
 // STATUS_PAGE_VERSION to the one already running. Checking the live file

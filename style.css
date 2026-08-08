@@ -99,6 +99,14 @@ body {
 #app-uptime-history {
   gap: 1px !important;
 }
+/* app.html's Response Time section — a plain placeholder box for a future
+   response-time graph. Dashed border only, no fill (the .sub-card
+   background it sits inside already provides the box); easily swapped
+   out for real chart markup later without touching layout around it. */
+.latency-graph-placeholder {
+  height: 120px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+}
 /* history.html's monthly summary table — border tones matching the rest
    of the dark theme (same rgba values as .sub-card) rather than
    Bootstrap's default light table borders. */

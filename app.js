@@ -2,20 +2,36 @@
 // the `app` query param matched against apps.json's keys. Mirrors
 // status.js's live-refresh architecture (refreshAppStatus/scheduleRefresh)
 // scoped to one fixed set of elements instead of one card per app.
-// The Recent Updates accordion and the uptime history strip are shared
+// The Recent Events accordion and the uptime history strip are shared
 // with status.js via common.js's renderIssueAccordion/renderUptimeStrip —
 // they were byte-identical, unlike history.js's renderIncidentItem, which
 // is a genuinely different layout and stays page-local by design. The
-// badge/message/favicon rendering below (setAppBadge, setAppMessage,
-// updateFaviconAndTitle) stays page-local too — different DOM targets
-// than status.js's per-card versions, and slated for its own redesign.
+// header/favicon/uptime-stat/latency-stat rendering below stays page-local
+// too — different DOM targets and different stat sets than status.js's
+// per-card versions.
 
-const APP_UPTIME_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // matches status.js's UPTIME_TIMEFRAMES['1m']
 const APP_UPTIME_HISTORY_DAYS = 90;
+const LATENCY_HISTORY_DAYS = 90;
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
-const FAVICON_COLORS = { operational: '#198754', partial: '#ffc107', down: '#dc3545' };
+// Matches FAVICON_COLORS' keys to this page's actual 3-state model
+// (operational/maintenance/down) rather than status.js's operational/
+// partial/down — this page has no "partial" concept (there's only ever
+// one app), 'maintenance' is the exact analogue.
+const FAVICON_COLORS = { operational: '#198754', maintenance: '#ffc107', down: '#dc3545' };
 let faviconDataUrlCache = {};
+
+const STATE_TEXT = { operational: 'operational', down: 'down', maintenance: 'under maintenance' };
+const STATE_COLOR_CLASS = { operational: 'text-success', down: 'text-danger', maintenance: 'text-warning' };
+
+// Overall Uptime's 4 fixed windows, each independently clamped to
+// MONITORING_START_DATE via getRollingWindow below.
+const OVERALL_UPTIME_WINDOWS = [
+  { id: 'app-uptime-24h', ms: 24 * 60 * 60 * 1000 },
+  { id: 'app-uptime-7d', ms: 7 * 24 * 60 * 60 * 1000 },
+  { id: 'app-uptime-30d', ms: 30 * 24 * 60 * 60 * 1000 },
+  { id: 'app-uptime-90d', ms: 90 * 24 * 60 * 60 * 1000 },
+];
 
 let allAppNames = [];
 let targetApp = null;
@@ -48,64 +64,46 @@ function buildFaviconDataUrl(color) {
   return faviconDataUrlCache[color];
 }
 
-// Same 3-state model as status.js's updateFaviconAndTitle (operational/
-// partial/down) rather than inventing a 4th "maintenance" state — keeps
-// the favicon meaning consistent between the two pages.
-function updateFaviconAndTitle(online, inMaintenance) {
-  const state = inMaintenance || !online ? (online ? 'partial' : 'down') : 'operational';
+// Takes the already-computed 3-way state directly, rather than the old
+// (online, inMaintenance) booleans — that pairing was buggy: online was
+// *always* false whenever inMaintenance was true (online was computed
+// upstream as !hasOpenAutoOutage && !inMaintenance), so the old
+// `online ? 'partial' : 'down'` branch could never actually reach
+// 'partial' during a real maintenance window. A single explicit state
+// value removes the possibility of that kind of derived-boolean bug.
+function updateFaviconAndTitle(state) {
   document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
-  const prefix = state === 'down' ? 'Down | ' : state === 'partial' ? 'Attention | ' : '';
+  const prefix = state === 'down' ? 'Down | ' : state === 'maintenance' ? 'Attention | ' : '';
   document.title = `${prefix}${baseTitle}`;
 }
 
-// Verbatim logic from status.js's setBadge/setMessage (status.js:34-67),
-// retargeted from a per-card `col.querySelector` to this page's single
-// fixed elements — there's only ever one app on this page.
-function setAppBadge(online, hasIssue, inMaintenance) {
-  const badge = document.getElementById('app-badge');
-  if (inMaintenance) {
-    badge.textContent = 'Maintenance';
-    badge.className = 'badge bg-info';
-    return;
-  }
-  badge.textContent = online ? 'Online' : 'Offline';
-  const badgeClass = online && hasIssue ? 'bg-warning' : online ? 'bg-success' : 'bg-danger';
-  badge.className = `badge ${badgeClass}`;
+// Header replaces the old badge + message entirely: "<AppName> is
+// <state>", state word colored via Bootstrap's text-success/-warning/
+// -danger utilities (no new CSS) — same color families as the favicon.
+function setAppState(state) {
+  const stateSpan = document.getElementById('app-state');
+  stateSpan.textContent = STATE_TEXT[state];
+  stateSpan.className = STATE_COLOR_CLASS[state];
 }
 
-function setAppMessage(online, issues) {
-  const message = document.getElementById('app-message');
-  message.textContent = '';
-  if (issues && issues.length) {
-    const link = document.createElement('a');
-    link.href = issues[0].html_url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.textContent = issues[0].title;
-    message.appendChild(link);
-    return;
-  }
-  message.textContent = online
-    ? 'This service has no known issues or planned maintenance.'
-    : 'This service is currently unreachable according to automated checks.';
-}
-
-// Rolling 30 days, clamped to MONITORING_START_DATE exactly like
-// status.js's "All Time" timeframe (getUptimeWindow, status.js:363-369) —
-// without this, the window would currently extend before monitoring
-// began, inflating the percentage the same way history.js's oldest
-// monthly row did before that was fixed.
-function getAppUptimeWindow(now) {
-  const rollingStart = new Date(now.getTime() - APP_UPTIME_WINDOW_MS);
+// Generalized version of the old getAppUptimeWindow: rolling `windowMs`
+// window clamped to MONITORING_START_DATE, exactly like status.js's "All
+// Time" timeframe (getUptimeWindow) — without this, a window would
+// currently extend before monitoring began, inflating the percentage.
+function getRollingWindow(windowMs, now) {
+  const rollingStart = new Date(now.getTime() - windowMs);
   const monitoringStart = new Date(MONITORING_START_DATE);
   const windowStart = rollingStart > monitoringStart ? rollingStart : monitoringStart;
   return [windowStart, now];
 }
 
+// The Uptime box's headline percent — now a 90-day rolling window (was
+// 30/"1 Month"), to match the "Last 90 Days" label beside it and the
+// 90-day history strip directly below it in the same box.
 function renderAppUptimePercent(issues) {
-  const [windowStart, windowEnd] = getAppUptimeWindow(new Date());
+  const [windowStart, windowEnd] = getRollingWindow(APP_UPTIME_HISTORY_DAYS * 24 * 60 * 60 * 1000, new Date());
   const percent = calculateUptimePercent(issues, windowStart, windowEnd);
-  document.getElementById('app-uptime-percent').textContent = `${percent.toFixed(2)}% uptime (1 Month)`;
+  document.getElementById('app-uptime-percent').textContent = `${percent.toFixed(2)}% uptime`;
 }
 
 // Adapted from status.js's renderUptimeHistory: same shared day-square
@@ -114,6 +112,46 @@ function renderAppUptimePercent(issues) {
 function renderAppUptimeHistory(issues) {
   const container = document.getElementById('app-uptime-history');
   renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
+}
+
+// Overall Uptime's 4 independent stat columns, each its own clamped
+// rolling window (24h/7d/30d/90d) via getRollingWindow above.
+function renderOverallUptime(issues) {
+  const now = new Date();
+  for (const { id, ms } of OVERALL_UPTIME_WINDOWS) {
+    const [windowStart, windowEnd] = getRollingWindow(ms, now);
+    const percent = calculateUptimePercent(issues, windowStart, windowEnd);
+    document.getElementById(id).textContent = `${percent.toFixed(2)}%`;
+  }
+}
+
+// Response Time's 3 stat columns: avg/max/min over the last
+// LATENCY_HISTORY_DAYS days. latency-history.json is already pruned
+// server-side to a 90-day rolling window, but this filters again
+// client-side anyway — cheap insurance, same "don't fully trust upstream
+// invariants" reasoning as MONITORING_START_DATE's own clamp elsewhere.
+// A fresh app with no recorded samples yet (or none within the window)
+// shows "No data" per stat instead of NaN/crashing.
+function renderLatencyStats(samples) {
+  const cutoff = Date.now() - LATENCY_HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  const recent = (samples || []).filter((s) => new Date(s.t).getTime() >= cutoff);
+
+  const avgEl = document.getElementById('app-latency-avg');
+  const maxEl = document.getElementById('app-latency-max');
+  const minEl = document.getElementById('app-latency-min');
+
+  if (!recent.length) {
+    avgEl.textContent = 'No data';
+    maxEl.textContent = 'No data';
+    minEl.textContent = 'No data';
+    return;
+  }
+
+  const values = recent.map((s) => s.ms);
+  const avg = values.reduce((sum, ms) => sum + ms, 0) / values.length;
+  avgEl.textContent = `${Math.round(avg)}ms`;
+  maxEl.textContent = `${Math.round(Math.max(...values))}ms`;
+  minEl.textContent = `${Math.round(Math.min(...values))}ms`;
 }
 
 let cachedFingerprint = null;
@@ -132,20 +170,23 @@ function updateAppRecentUpdates(recentIssues) {
 }
 
 async function refreshAppPage() {
-  const { issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp } =
-    await fetchAppIssues(allAppNames);
+  const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp] =
+    await Promise.all([fetchAppIssues(allAppNames), fetchLatencyHistory()]);
 
   const issues = downEventsByApp[targetApp] || [];
-  const openIssues = issuesByApp[targetApp];
-  const online = !hasOpenAutoOutage[targetApp] && !inMaintenance[targetApp];
-  const hasIssue = Boolean(openIssues && openIssues.length);
-  const maintenance = Boolean(inMaintenance[targetApp]);
 
-  setAppBadge(online, hasIssue, maintenance);
-  setAppMessage(online, openIssues);
+  // Maintenance takes precedence over an open auto-outage — same
+  // precedence the old setAppBadge used — and is checked directly here,
+  // once, rather than derived from an intermediate "online" boolean (see
+  // updateFaviconAndTitle's comment above for why that mattered).
+  const state = inMaintenance[targetApp] ? 'maintenance' : hasOpenAutoOutage[targetApp] ? 'down' : 'operational';
+
+  setAppState(state);
   renderAppUptimePercent(issues);
   renderAppUptimeHistory(issues);
-  updateFaviconAndTitle(online, maintenance);
+  renderOverallUptime(issues);
+  renderLatencyStats(latencyByApp[targetApp]);
+  updateFaviconAndTitle(state);
 
   const appRecentIssues = recentIssues.filter(({ apps }) => apps.includes(targetApp));
   updateAppRecentUpdates(appRecentIssues);
