@@ -85,11 +85,26 @@ jobs:
             echo "$latency_json" | jq empty >/dev/null 2>&1 || latency_json='{}'
           fi
 
+          # monitoring-start.json records, once, the first time each app is
+          # ever seen here — read unconditionally (not hourly-gated like
+          # latency above) so a newly added app in apps.json gets its start
+          # date recorded within ~1 minute rather than waiting for the next
+          # hourly window.
+          monitoring_json=$(cat monitoring-start.json 2>/dev/null || echo '{}')
+          echo "$monitoring_json" | jq empty >/dev/null 2>&1 || monitoring_json='{}'
+          monitoring_changed=false
+
           while IFS=$'\t' read -r key url; do
             # Labels are always lowercase regardless of how apps.json
             # capitalizes the app name, so this stays in sync with the page's
             # case-insensitive label matching no matter the casing used.
             label=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$(echo "$monitoring_json" | jq -r --arg k "$key" 'has($k)')" == "false" ]]; then
+              monitoring_json=$(echo "$monitoring_json" | jq --arg k "$key" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '.[$k] = $t')
+              monitoring_changed=true
+              echo "First time seeing $key — recording monitoring start date"
+            fi
 
             gh_retry gh label create "$label" --color 5319e7 \
               --description "Status updates for $key" --force >/dev/null 2>&1 || true
@@ -164,6 +179,19 @@ jobs:
               fi
             fi
           done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' apps.json)
+
+          # Commit monitoring-start.json only when a genuinely new app was
+          # seen this run — independent of the latency block below (both
+          # are cheap no-ops most runs).
+          if [[ "$monitoring_changed" == true ]]; then
+            echo "$monitoring_json" > monitoring-start.json
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add monitoring-start.json
+            git commit -m "Record monitoring start date for new app(s)"
+            git pull --rebase --autostash
+            git push
+          fi
 
           # Prune samples older than 90 days and commit only on the one run
           # per hour that actually recorded anything — record_latency stays

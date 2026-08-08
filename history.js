@@ -40,7 +40,7 @@ function buildMonthList(startDate, now) {
   return months;
 }
 
-function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStart) {
+function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp) {
   const headerRow = document.getElementById('monthly-summary-header');
   const body = document.getElementById('monthly-summary-body');
 
@@ -56,11 +56,6 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
   for (const { year, month } of months) {
     const [monthStart, monthEndRaw] = getMonthBounds(year, month);
     const monthEnd = new Date(Math.min(monthEndRaw.getTime(), now.getTime()));
-    // monthStart is always the calendar month's 1st, but monitoring may have
-    // started partway through it (true only for the oldest row) — clamp so
-    // the uptime% denominator never counts pre-monitoring days as "up" time.
-    // No-op for every later row, whose monthStart is already >= monitoringStart.
-    const monitoredStart = new Date(Math.max(monthStart.getTime(), monitoringStart.getTime()));
 
     const row = document.createElement('tr');
     const monthCell = document.createElement('td');
@@ -69,6 +64,13 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
 
     for (const app of appNames) {
       const issues = downEventsByApp[app] || [];
+      // monthStart is always the calendar month's 1st, but this app's own
+      // monitoring may have started partway through it (true only for its
+      // own earliest row) — clamp per app, not once per row, since two
+      // apps can have different start dates. No-op once monthStart is
+      // already past that app's own start.
+      const monitoringStart = getMonitoringStart(app, monitoringStartByApp);
+      const monitoredStart = new Date(Math.max(monthStart.getTime(), monitoringStart.getTime()));
       const downtimeMs = getDowntimeMs(issues, monitoredStart, monthEnd);
       const percent = calculateUptimePercent(issues, monitoredStart, monthEnd);
       const cell = document.createElement('td');
@@ -161,13 +163,17 @@ async function init() {
 
   const apps = await loadApps();
   const appNames = Object.keys(apps);
-  const { recentIssues, downEventsByApp } = await fetchAppIssues(appNames);
+  const [{ recentIssues, downEventsByApp }, monitoringStartByApp] =
+    await Promise.all([fetchAppIssues(appNames), fetchMonitoringStartDates()]);
 
   const now = new Date();
-  const monitoringStart = new Date(MONITORING_START_DATE);
-  const months = buildMonthList(monitoringStart, now);
+  // Always the fixed global date, not per-app — this only needs to be the
+  // universal earliest possible bound so the month-row range covers every
+  // app's own (always-later-or-equal) start date; per-cell clamping to
+  // each app's actual date happens inside renderMonthlySummary.
+  const months = buildMonthList(new Date(MONITORING_START_DATE), now);
 
-  renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStart);
+  renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp);
   const hasIncidents = renderIncidentMonths(recentIssues, months);
 
   const status = document.getElementById('history-status');

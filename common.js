@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const STATUS_PAGE_VERSION = 'v1.19.1';
+const STATUS_PAGE_VERSION = 'v1.20.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -26,6 +26,28 @@ async function fetchLatencyHistory() {
   } catch {
     return {};
   }
+}
+
+// monitoring-start.json is committed by the workflow (see status-check.yml)
+// the first time it ever sees a given app name in apps.json — same
+// same-origin static-file pattern as fetchLatencyHistory, no GitHub API/
+// rate-limit involvement.
+async function fetchMonitoringStartDates() {
+  try {
+    const res = await fetch(`monitoring-start.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+// Falls back to the global MONITORING_START_DATE for any app without its
+// own recorded date — covers a fetch failure, and (pre-seeded exception
+// aside) is the safe default for any app this file doesn't yet know about.
+function getMonitoringStart(app, monitoringStartByApp) {
+  const iso = monitoringStartByApp[app];
+  return iso ? new Date(iso) : new Date(MONITORING_START_DATE);
 }
 
 // Open issues in this repo labeled with an app key (e.g. "notflix")

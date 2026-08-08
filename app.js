@@ -25,7 +25,7 @@ const STATE_TEXT = { operational: 'operational', down: 'down', maintenance: 'und
 const STATE_COLOR_CLASS = { operational: 'text-success', down: 'text-danger', maintenance: 'text-warning' };
 
 // Overall Uptime's 4 fixed windows, each independently clamped to
-// MONITORING_START_DATE via getRollingWindow below.
+// targetApp's own monitoring-start date via getRollingWindow below.
 const OVERALL_UPTIME_WINDOWS = [
   { id: 'app-uptime-24h', ms: 24 * 60 * 60 * 1000 },
   { id: 'app-uptime-7d', ms: 7 * 24 * 60 * 60 * 1000 },
@@ -36,6 +36,11 @@ const OVERALL_UPTIME_WINDOWS = [
 let allAppNames = [];
 let targetApp = null;
 let baseTitle = null; // e.g. "Notflix | Status | Isaac Mason", set once targetApp is known
+
+// monitoring-start.json's result ({ appName: isoDate }) — fetched once at
+// init() alongside apps.json, resolved for targetApp via common.js's
+// getMonitoringStart.
+let cachedMonitoringStartByApp = {};
 
 // formatShortTime, lastUpdatedAt, secondsUntilRefresh, renderLastUpdatedCountdown,
 // tickCountdown, and startCountdownTicker now live in common.js (loaded
@@ -91,12 +96,13 @@ function setAppState(state) {
 }
 
 // Generalized version of the old getAppUptimeWindow: rolling `windowMs`
-// window clamped to MONITORING_START_DATE, exactly like status.js's "All
-// Time" timeframe (getUptimeWindow) — without this, a window would
-// currently extend before monitoring began, inflating the percentage.
+// window clamped to targetApp's own monitoring-start date, exactly like
+// status.js's "All Time" timeframe (getUptimeWindow) — without this, a
+// window would currently extend before monitoring began, inflating the
+// percentage.
 function getRollingWindow(windowMs, now) {
   const rollingStart = new Date(now.getTime() - windowMs);
-  const monitoringStart = new Date(MONITORING_START_DATE);
+  const monitoringStart = getMonitoringStart(targetApp, cachedMonitoringStartByApp);
   const windowStart = rollingStart > monitoringStart ? rollingStart : monitoringStart;
   return [windowStart, now];
 }
@@ -115,7 +121,7 @@ function renderAppUptimePercent(issues) {
 // of 30, targeting this page's single #app-uptime-history container.
 function renderAppUptimeHistory(issues) {
   const container = document.getElementById('app-uptime-history');
-  renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
+  renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, getMonitoringStart(targetApp, cachedMonitoringStartByApp), new Date());
 }
 
 // Overall Uptime's 4 independent stat columns, each its own clamped
@@ -271,9 +277,10 @@ function renderNotFound() {
 }
 
 async function init() {
-  const apps = await loadApps();
+  const [apps, monitoringStartByApp] = await Promise.all([loadApps(), fetchMonitoringStartDates()]);
   allAppNames = Object.keys(apps);
   targetApp = getRequestedAppName(apps);
+  cachedMonitoringStartByApp = monitoringStartByApp;
 
   document.getElementById('app-loading').classList.add('d-none');
   document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;

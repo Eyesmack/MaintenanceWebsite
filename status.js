@@ -13,9 +13,10 @@ let faviconDataUrlCache = {};
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
 // renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory,
 // renderLatencyChart, formatShortTime, lastUpdatedAt, secondsUntilRefresh,
-// renderLastUpdatedCountdown, tickCountdown, startCountdownTicker, and
-// STATUS_PAGE_VERSION now live in common.js (loaded before this file),
-// shared with history.js and/or app.js.
+// renderLastUpdatedCountdown, tickCountdown, startCountdownTicker,
+// fetchMonitoringStartDates, getMonitoringStart, and STATUS_PAGE_VERSION
+// now live in common.js (loaded before this file), shared with history.js
+// and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -258,6 +259,11 @@ let cachedAppNames = [];
 // refreshAppStatus), but the map is kept around rather than re-fetched.
 let cachedApps = {};
 
+// monitoring-start.json's result ({ appName: isoDate }) — fetched once at
+// init() alongside apps.json (it changes about as often, i.e. only when a
+// new app is added), resolved per-app via common.js's getMonitoringStart.
+let cachedMonitoringStartByApp = {};
+
 // { appName: colElement }, from renderStatusCards() — kept so the refresh
 // loop can update the existing card DOM in place instead of rebuilding it
 // every cycle (the app list never changes at runtime).
@@ -275,7 +281,7 @@ function renderUptime(app) {
 
   const timeframeKey = select.value;
   const { label } = UPTIME_TIMEFRAMES[timeframeKey];
-  const [windowStart, windowEnd] = getUptimeWindow(timeframeKey, new Date());
+  const [windowStart, windowEnd] = getUptimeWindow(timeframeKey, new Date(), app);
   const percent = calculateUptimePercent(cachedDownEventsByApp[app] || [], windowStart, windowEnd);
   text.textContent = `${percent.toFixed(2)}% uptime (${label})`;
 }
@@ -293,7 +299,7 @@ function initUptimeTimeframeSelector() {
 function renderUptimeHistory(app) {
   const container = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime-history]`);
   if (!container) return;
-  renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
+  renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, getMonitoringStart(app, cachedMonitoringStartByApp), new Date());
 }
 
 // A line chart (common.js's renderLatencyChart) scaled to whatever's
@@ -322,10 +328,10 @@ function renderLatencyHistory(app) {
 // formatTimestamp, formatDuration, and calculateUptimePercent now live in
 // common.js (loaded before this file), shared with history.js.
 
-function getUptimeWindow(timeframeKey, now) {
+function getUptimeWindow(timeframeKey, now, app) {
   const timeframe = UPTIME_TIMEFRAMES[timeframeKey];
   const start = timeframeKey === 'all'
-    ? new Date(MONITORING_START_DATE)
+    ? getMonitoringStart(app, cachedMonitoringStartByApp)
     : new Date(now.getTime() - timeframe.ms);
   return [start, now];
 }
@@ -426,7 +432,7 @@ async function scheduleRefresh() {
 }
 
 async function init() {
-  cachedApps = await loadApps();
+  [cachedApps, cachedMonitoringStartByApp] = await Promise.all([loadApps(), fetchMonitoringStartDates()]);
   createUptimeTimeframeSelector();
   cachedCols = renderStatusCards(cachedApps);
   cachedAppNames = Object.keys(cachedApps);
