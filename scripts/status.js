@@ -409,7 +409,7 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 // GitHub Pages' own build/propagation lag right after a push.
 async function checkForNewVersion() {
   try {
-    const res = await fetch(`common.js?v=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`scripts/common.js?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return false;
     const text = await res.text();
     const match = text.match(/const STATUS_PAGE_VERSION = '([^']+)'/);

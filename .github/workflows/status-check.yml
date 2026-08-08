@@ -81,7 +81,7 @@ jobs:
           record_latency=false
           if [[ "$(echo "$state_json" | jq -r '._lastLatencyHour // ""')" != "$current_hour" ]]; then
             record_latency=true
-            latency_json=$(cat latency-history.json 2>/dev/null || echo '{}')
+            latency_json=$(cat data/latency-history.json 2>/dev/null || echo '{}')
             echo "$latency_json" | jq empty >/dev/null 2>&1 || latency_json='{}'
           fi
 
@@ -90,7 +90,7 @@ jobs:
           # latency above) so a newly added app in apps.json gets its start
           # date recorded within ~1 minute rather than waiting for the next
           # hourly window.
-          monitoring_json=$(cat monitoring-start.json 2>/dev/null || echo '{}')
+          monitoring_json=$(cat data/monitoring-start.json 2>/dev/null || echo '{}')
           echo "$monitoring_json" | jq empty >/dev/null 2>&1 || monitoring_json='{}'
           monitoring_changed=false
 
@@ -178,16 +178,16 @@ jobs:
                 fi
               fi
             fi
-          done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' apps.json)
+          done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' data/apps.json)
 
           # Commit monitoring-start.json only when a genuinely new app was
           # seen this run — independent of the latency block below (both
           # are cheap no-ops most runs).
           if [[ "$monitoring_changed" == true ]]; then
-            echo "$monitoring_json" > monitoring-start.json
+            echo "$monitoring_json" > data/monitoring-start.json
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add monitoring-start.json
+            git add data/monitoring-start.json
             git commit -m "Record monitoring start date for new app(s)"
             git pull --rebase --autostash
             git push
@@ -201,12 +201,12 @@ jobs:
             cutoff_epoch=$(date -u -d '-90 days' +%s)
             latency_json=$(echo "$latency_json" | jq --argjson cutoff "$cutoff_epoch" \
               'with_entries(.value |= map(select((.t | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime) >= $cutoff)))')
-            echo "$latency_json" > latency-history.json
+            echo "$latency_json" > data/latency-history.json
             state_json=$(echo "$state_json" | jq --arg h "$current_hour" '._lastLatencyHour = $h')
 
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add latency-history.json
+            git add data/latency-history.json
             if ! git diff --cached --quiet; then
               git commit -m "Record hourly response-time samples ($current_hour)"
               git pull --rebase --autostash

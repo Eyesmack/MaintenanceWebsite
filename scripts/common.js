@@ -6,12 +6,12 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const STATUS_PAGE_VERSION = 'v1.20.2';
+const STATUS_PAGE_VERSION = 'v1.20.3';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
 async function loadApps() {
-  const res = await fetch('apps.json', { cache: 'no-store' });
+  const res = await fetch('data/apps.json', { cache: 'no-store' });
   return res.json();
 }
 
@@ -20,7 +20,7 @@ async function loadApps() {
 // needs no Cloudflare Worker/GitHub API involvement and no rate-limit use.
 async function fetchLatencyHistory() {
   try {
-    const res = await fetch(`latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`data/latency-history.json?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return {};
     return await res.json();
   } catch {
@@ -34,7 +34,7 @@ async function fetchLatencyHistory() {
 // rate-limit involvement.
 async function fetchMonitoringStartDates() {
   try {
-    const res = await fetch(`monitoring-start.json?v=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`data/monitoring-start.json?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return {};
     return await res.json();
   } catch {
