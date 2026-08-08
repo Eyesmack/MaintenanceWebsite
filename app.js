@@ -188,6 +188,42 @@ function renderLatencyStats(samples) {
   minEl.textContent = `${Math.round(Math.min(...values))}ms`;
 }
 
+// One point per UTC calendar day, oldest first (left-to-right reading
+// order) — null (not 0) for a day with no samples, so renderLatencyChart's
+// spanGaps:false leaves a real gap instead of drawing a false dip to zero.
+function bucketDailyAverage(samples, days) {
+  const byDay = new Map();
+  for (const s of samples || []) {
+    const key = s.t.slice(0, 10); // YYYY-MM-DD (UTC, matches the 'Z'-suffixed timestamps already recorded)
+    (byDay.get(key) || byDay.set(key, []).get(key)).push(s.ms);
+  }
+
+  const labels = [];
+  const values = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const key = day.toISOString().slice(0, 10);
+    const dayValues = byDay.get(key);
+    labels.push(day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+    values.push(dayValues ? Math.round(dayValues.reduce((a, b) => a + b, 0) / dayValues.length) : null);
+  }
+  return { labels, values };
+}
+
+// Hidden (with a "No data yet" message) until this app has at least one
+// recorded sample within the window — a fresh app has nothing to chart.
+function renderAppLatencyChart(samples) {
+  const { labels, values } = bucketDailyAverage(samples, LATENCY_HISTORY_DAYS);
+  const hasData = values.some((v) => v !== null);
+
+  document.getElementById('latency-chart-wrap').classList.toggle('d-none', !hasData);
+  document.getElementById('app-latency-empty').classList.toggle('d-none', hasData);
+  if (!hasData) return;
+
+  renderLatencyChart(document.getElementById('app-latency-chart'), labels, values, { compact: false });
+}
+
 let cachedFingerprint = null;
 
 // Adapted from status.js's updateRecentUpdates: same fingerprint-diff
@@ -220,6 +256,7 @@ async function refreshAppPage() {
   renderAppUptimeHistory(issues);
   renderOverallUptime(issues);
   renderLatencyStats(latencyByApp[targetApp]);
+  renderAppLatencyChart(latencyByApp[targetApp]);
   updateFaviconAndTitle(state);
 
   const appRecentIssues = recentIssues.filter(({ apps }) => apps.includes(targetApp));

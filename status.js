@@ -11,9 +11,9 @@ let faviconDataUrlCache = {};
 // getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
 // fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
-// renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory, and
-// STATUS_PAGE_VERSION now live in common.js (loaded before this file),
-// shared with history.js and/or app.js.
+// renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory,
+// renderLatencyChart, and STATUS_PAGE_VERSION now live in common.js
+// (loaded before this file), shared with history.js and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -170,12 +170,15 @@ function createStatusCard(app) {
   latencyLabel.className = 'small text mb-1 mt-2';
   latencyLabel.textContent = 'Response Time (Last 24 Hours)';
 
-  const latencyHistory = document.createElement('div');
-  latencyHistory.className = 'd-flex gap-1 align-items-end';
-  latencyHistory.style.height = '18px';
+  // A bare canvas has no intrinsic block height, so it needs a sized
+  // parent — same reasoning uptimeHistory.style.height uses above.
+  const latencyHistoryWrap = document.createElement('div');
+  latencyHistoryWrap.style.height = '40px';
+  const latencyHistory = document.createElement('canvas');
   latencyHistory.dataset.latencyHistory = '';
+  latencyHistoryWrap.appendChild(latencyHistory);
 
-  latencySection.append(latencyLabel, latencyHistory);
+  latencySection.append(latencyLabel, latencyHistoryWrap);
 
   body.append(title, message);
 
@@ -291,16 +294,16 @@ function renderUptimeHistory(app) {
   renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, new Date(MONITORING_START_DATE), new Date());
 }
 
-// Bar height (not color) encodes relative latency — unlike uptime, a
-// slower response isn't inherently "bad" (some self-hosted apps are just
-// normally slower), so there's no invented good/bad threshold here, just
-// a sparkline scaled against the max value currently in view. Hidden
-// entirely until this app has at least one recorded sample.
+// A line chart (common.js's renderLatencyChart) scaled to whatever's
+// currently in view — unlike uptime, a slower response isn't inherently
+// "bad" (some self-hosted apps are just normally slower), so there's no
+// invented good/bad threshold here. Hidden entirely until this app has at
+// least one recorded sample.
 function renderLatencyHistory(app) {
   const col = document.querySelector(`#status-cards [data-app="${app}"]`);
   if (!col) return;
   const section = col.querySelector('[data-latency-section]');
-  const container = col.querySelector('[data-latency-history]');
+  const canvas = col.querySelector('[data-latency-history]');
 
   const samples = (cachedLatencyByApp[app] || []).slice(-LATENCY_HISTORY_HOURS);
   if (!samples.length) {
@@ -308,18 +311,9 @@ function renderLatencyHistory(app) {
     return;
   }
 
-  container.innerHTML = '';
-  const maxMs = Math.max(...samples.map((s) => s.ms), 1);
-  for (const sample of samples) {
-    const bar = document.createElement('div');
-    bar.className = 'flex-fill rounded-1 bg-info';
-    bar.style.height = `${Math.max(8, Math.round((sample.ms / maxMs) * 100))}%`;
-    bar.setAttribute('data-bs-toggle', 'tooltip');
-    bar.title = `${formatTimestamp(sample.t)} — ${sample.ms}ms`;
-    container.appendChild(bar);
-  }
-
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+  const labels = samples.map((s) => formatTimestamp(s.t));
+  const values = samples.map((s) => s.ms);
+  renderLatencyChart(canvas, labels, values, { compact: true });
   section.classList.remove('d-none');
 }
 

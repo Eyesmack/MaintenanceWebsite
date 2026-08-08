@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const STATUS_PAGE_VERSION = 'v1.18.2';
+const STATUS_PAGE_VERSION = 'v1.19.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -528,4 +528,61 @@ function renderUptimeStrip(container, issues, days, monitoringStart, now) {
   // instance. Its Tooltip JS takes over the `title` attribute (removing it
   // from native-tooltip duty) once initialized.
   container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+}
+
+// Shared Chart.js line-chart renderer for response-time data — status.js's
+// per-card mini chart and app.js's full 90-day chart both call this so they
+// render with the same visual language despite different data windows/
+// granularity. Destroys any previous chart on the same canvas first —
+// Chart.js throws "Canvas is already in use" if a second instance is
+// constructed over an old one without disposing it first, which the 60s
+// refresh loop in both callers would otherwise hit on every tick.
+const latencyChartInstances = new WeakMap();
+
+function renderLatencyChart(canvas, labels, values, { compact }) {
+  latencyChartInstances.get(canvas)?.destroy();
+
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#0dcaf0',
+        backgroundColor: 'rgba(13, 202, 240, 0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: compact ? 0 : 3,
+        borderWidth: compact ? 1.5 : 2,
+        spanGaps: false, // a day/hour with no sample is a real gap, not 0ms
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${Math.round(ctx.parsed.y)}ms` } },
+      },
+      scales: {
+        x: {
+          display: !compact,
+          grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          ticks: { color: '#6a7585', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+        },
+        y: {
+          display: !compact,
+          beginAtZero: true,
+          grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          ticks: { color: '#6a7585', callback: (v) => `${v}ms` },
+        },
+      },
+    },
+  });
+
+  latencyChartInstances.set(canvas, chart);
+  return chart;
 }
