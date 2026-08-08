@@ -12,8 +12,10 @@ let faviconDataUrlCache = {};
 // fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
 // renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory,
-// renderLatencyChart, and STATUS_PAGE_VERSION now live in common.js
-// (loaded before this file), shared with history.js and/or app.js.
+// renderLatencyChart, formatShortTime, lastUpdatedAt, secondsUntilRefresh,
+// renderLastUpdatedCountdown, tickCountdown, startCountdownTicker, and
+// STATUS_PAGE_VERSION now live in common.js (loaded before this file),
+// shared with history.js and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -386,6 +388,10 @@ async function refreshAppStatus() {
 
   document.getElementById('last-updated').textContent =
     `Last updated: ${formatTimestamp(new Date())} · ${STATUS_PAGE_VERSION}`;
+
+  lastUpdatedAt = new Date();
+  secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
+  renderLastUpdatedCountdown('header-last-updated');
 }
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -427,6 +433,7 @@ async function init() {
 
   initUptimeTimeframeSelector();
   initRecentUpdates();
+  startCountdownTicker('header-last-updated');
 
   document.getElementById('version-text').textContent = `${STATUS_PAGE_VERSION}`;
 

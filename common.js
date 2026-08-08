@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const STATUS_PAGE_VERSION = 'v1.19.0';
+const STATUS_PAGE_VERSION = 'v1.19.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -573,11 +573,29 @@ function renderLatencyChart(canvas, labels, values, { compact }) {
           grid: { color: 'rgba(255, 255, 255, 0.08)' },
           ticks: { color: '#6a7585', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
         },
+        // display stays true even when compact — the compact chart still
+        // wants 2 dashed reference gridlines (top + middle), just no
+        // visible axis border/tick labels. beginAtZero + ticks.count:3
+        // produces exactly 3 evenly-spaced ticks (bottom/middle/top); the
+        // bottom one (index 0) is made transparent below so only the
+        // middle and top lines actually show.
         y: {
-          display: !compact,
+          display: true,
           beginAtZero: true,
-          grid: { color: 'rgba(255, 255, 255, 0.08)' },
-          ticks: { color: '#6a7585', callback: (v) => `${v}ms` },
+          border: { display: !compact },
+          grid: {
+            display: true,
+            color: compact
+              ? (ctx) => (ctx.index === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.25)')
+              : 'rgba(255, 255, 255, 0.08)',
+            borderDash: compact ? [4, 4] : undefined,
+          },
+          ticks: {
+            display: !compact,
+            count: compact ? 3 : undefined,
+            color: '#6a7585',
+            callback: (v) => `${v}ms`,
+          },
         },
       },
     },
@@ -585,4 +603,39 @@ function renderLatencyChart(canvas, labels, values, { compact }) {
 
   latencyChartInstances.set(canvas, chart);
   return chart;
+}
+
+// Forces 12-hour am/pm regardless of the visitor's locale default (some
+// locales default to 24-hour time) — the exact "10:57 pm" format was
+// specifically requested. Shared by status.js's header countdown and
+// app.js's — same live "Last updated X | Next update in Y sec." indicator,
+// just rendered into a different element per page.
+function formatShortTime(date) {
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
+}
+
+let lastUpdatedAt = null; // Date of the most recent successful refresh
+let secondsUntilRefresh = 0; // reset by each page's own refresh function
+
+function renderLastUpdatedCountdown(elementId) {
+  if (!lastUpdatedAt) return;
+  const secondsText = String(secondsUntilRefresh).padStart(2, '0');
+  document.getElementById(elementId).textContent =
+    `Last updated ${formatShortTime(lastUpdatedAt)} | Next update in ${secondsText} sec.`;
+}
+
+// Named (not an inline arrow in setInterval) so it's independently
+// callable from a test without waiting on a real timer.
+function tickCountdown(elementId) {
+  secondsUntilRefresh = Math.max(0, secondsUntilRefresh - 1);
+  renderLastUpdatedCountdown(elementId);
+}
+
+// Ticks every second independent of each page's own 60s refresh cycle —
+// reset to REFRESH_INTERVAL_MS/1000 happens in that page's own refresh
+// function, right when a new refresh completes, so the visual countdown
+// and the real timer stay anchored to the same instant rather than
+// drifting apart over many cycles.
+function startCountdownTicker(elementId) {
+  setInterval(() => tickCountdown(elementId), 1000);
 }

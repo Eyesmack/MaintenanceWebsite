@@ -37,8 +37,9 @@ let allAppNames = [];
 let targetApp = null;
 let baseTitle = null; // e.g. "Notflix | Status | Isaac Mason", set once targetApp is known
 
-let secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
-let lastUpdatedAt = null; // Date of the most recent successful refresh
+// formatShortTime, lastUpdatedAt, secondsUntilRefresh, renderLastUpdatedCountdown,
+// tickCountdown, and startCountdownTicker now live in common.js (loaded
+// before this file), shared with status.js's header countdown.
 
 // Exact, case-sensitive match against apps.json's keys — those preserve
 // canonical capitalization (e.g. "Nginx Proxy Manager"), unlike
@@ -78,37 +79,6 @@ function updateFaviconAndTitle(state) {
   document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
   const prefix = state === 'down' ? 'Down | ' : state === 'maintenance' ? 'Attention | ' : '';
   document.title = `${prefix}${baseTitle}`;
-}
-
-// Forces 12-hour am/pm regardless of the visitor's locale default (some
-// locales default to 24-hour time) — deliberately not using the same
-// "respect the browser's own locale" convention formatTimestamp uses
-// elsewhere, since the exact "10:57 pm" format was specifically requested.
-function formatShortTime(date) {
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
-}
-
-function renderLastUpdated() {
-  if (!lastUpdatedAt) return;
-  const secondsText = String(secondsUntilRefresh).padStart(2, '0');
-  document.getElementById('last-updated').textContent =
-    `Last updated ${formatShortTime(lastUpdatedAt)} | Next update in ${secondsText} sec.`;
-}
-
-// Named (not an inline arrow in setInterval) so it's independently
-// callable from a test without waiting on a real timer.
-function tickCountdown() {
-  secondsUntilRefresh = Math.max(0, secondsUntilRefresh - 1);
-  renderLastUpdated();
-}
-
-// Ticks every second independent of the 60s refresh cycle itself — reset
-// to REFRESH_INTERVAL_MS/1000 happens in refreshAppPage() below, right
-// when a new refresh completes and the next setTimeout is scheduled, so
-// the visual countdown and the real timer stay anchored to the same
-// instant rather than drifting apart over many cycles.
-function startCountdownTicker() {
-  setInterval(tickCountdown, 1000);
 }
 
 // Header replaces the old badge + message entirely: "<AppName> is
@@ -219,8 +189,25 @@ function renderAppLatencyChart(samples) {
 
   document.getElementById('latency-chart-wrap').classList.toggle('d-none', !hasData);
   document.getElementById('app-latency-empty').classList.toggle('d-none', hasData);
-  if (!hasData) return;
 
+  // Monitoring only recently started recording latency, so for a while the
+  // chart will show real data for less than the full 90-day span it's
+  // scaled to — without this note, sparse-looking history reads as "no
+  // traffic"/"an outage" rather than "history just hasn't accumulated yet".
+  // Self-clears once real history actually reaches the full window.
+  const note = document.getElementById('app-latency-note');
+  if (hasData) {
+    const earliest = samples.reduce((min, s) => (s.t < min ? s.t : min), samples[0].t);
+    const daysCovered = (Date.now() - new Date(earliest).getTime()) / (24 * 60 * 60 * 1000);
+    const spansFullWindow = daysCovered >= LATENCY_HISTORY_DAYS - 1; // rounding slack
+    const earliestLabel = new Date(earliest).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    note.textContent = `Showing available data since ${earliestLabel} — not yet a full ${LATENCY_HISTORY_DAYS} days.`;
+    note.classList.toggle('d-none', spansFullWindow);
+  } else {
+    note.classList.add('d-none');
+  }
+
+  if (!hasData) return;
   renderLatencyChart(document.getElementById('app-latency-chart'), labels, values, { compact: false });
 }
 
@@ -264,7 +251,7 @@ async function refreshAppPage() {
 
   lastUpdatedAt = new Date();
   secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
-  renderLastUpdated();
+  renderLastUpdatedCountdown('last-updated');
 }
 
 // No status.js-style checkForNewVersion self-reload check — this page has
@@ -300,7 +287,7 @@ async function init() {
   document.title = baseTitle;
   document.getElementById('app-name').textContent = targetApp;
   document.getElementById('app-found').classList.remove('d-none');
-  startCountdownTicker();
+  startCountdownTicker('last-updated');
 
   await scheduleAppRefresh();
 }
