@@ -160,6 +160,7 @@ function renderIncidentMonths(recentIssues, months) {
 
 async function init() {
   document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;
+  document.getElementById('version-text-top').textContent = STATUS_PAGE_VERSION;
 
   const apps = await loadApps();
   const appNames = Object.keys(apps);
