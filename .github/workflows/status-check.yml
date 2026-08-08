@@ -27,6 +27,22 @@ jobs:
         run: |
           set -uo pipefail
 
+          # A transient 5xx from GitHub's own API (seen in practice as an
+          # occasional 504 on api.github.com/graphql) shouldn't fail the
+          # whole run — retry a gh call a few times with a short backoff
+          # before giving up. curl's own --retry below covers the app
+          # reachability checks; this covers every call to GitHub itself.
+          gh_retry() {
+            local attempt=1 max_attempts=3
+            until "$@"; do
+              if (( attempt >= max_attempts )); then
+                return 1
+              fi
+              sleep $((attempt * 3))
+              attempt=$((attempt + 1))
+            done
+          }
+
           # Consecutive failed checks required before an outage issue gets
           # filed — checks run every 1 minute, so a single blip shouldn't
           # alert. State (per-app consecutive-failure counts) has to live
@@ -40,21 +56,21 @@ jobs:
 
           # auto-outage marks issues this workflow owns, so it never touches
           # manually-filed maintenance issues (which carry only the app label).
-          gh label create auto-outage --color d73a4a \
+          gh_retry gh label create auto-outage --color d73a4a \
             --description "Automatically opened by the status-check workflow" --force >/dev/null 2>&1 || true
-          gh label create "$STATE_LABEL" --color 6a737d \
+          gh_retry gh label create "$STATE_LABEL" --color 6a737d \
             --description "Internal bookkeeping for the status-check workflow — do not edit" --force >/dev/null 2>&1 || true
 
-          state_issue_number=$(gh issue list --repo "$GH_REPO" --label "$STATE_LABEL" --state open \
+          state_issue_number=$(gh_retry gh issue list --repo "$GH_REPO" --label "$STATE_LABEL" --state open \
             --json number --jq '(.[0].number // "")')
           if [[ -z "$state_issue_number" ]]; then
-            state_issue_url=$(gh issue create --repo "$GH_REPO" \
+            state_issue_url=$(gh_retry gh issue create --repo "$GH_REPO" \
               --title "Status Check Internal State (auto-managed — do not edit)" \
               --body '{}' --label "$STATE_LABEL")
             state_issue_number=$(basename "$state_issue_url")
           fi
 
-          state_json=$(gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")')
+          state_json=$(gh_retry gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")')
           echo "$state_json" | jq empty >/dev/null 2>&1 || state_json='{}'
 
           # Response-time samples are recorded once an hour (not every
@@ -75,7 +91,7 @@ jobs:
             # case-insensitive label matching no matter the casing used.
             label=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
 
-            gh label create "$label" --color 5319e7 \
+            gh_retry gh label create "$label" --color 5319e7 \
               --description "Status updates for $key" --force >/dev/null 2>&1 || true
 
             read -r status time_total <<< "$(curl -sL -A "GitHub-Actions-StatusCheck" -o /dev/null -w '%{http_code} %{time_total}' \
@@ -88,7 +104,7 @@ jobs:
                 '.[$k] = ((.[$k] // []) + [{t: $t, ms: $ms}])')
             fi
 
-            existing=$(gh issue list --repo "$GH_REPO" --label "$label,auto-outage" --state open \
+            existing=$(gh_retry gh issue list --repo "$GH_REPO" --label "$label,auto-outage" --state open \
               --json number --jq '(.[0].number // "")')
 
             if [[ "$status" =~ ^[23][0-9][0-9]$ ]]; then
@@ -98,7 +114,7 @@ jobs:
               state_json=$(echo "$state_json" | jq --arg k "$label" '.[$k] = 0')
 
               if [[ -n "$existing" ]]; then
-                gh issue close "$existing" --repo "$GH_REPO" \
+                gh_retry gh issue close "$existing" --repo "$GH_REPO" \
                   --comment "Recovered — $key responded with HTTP $status at $(date -u +'%Y-%m-%d %H:%M UTC')."
                 echo "Closed issue #$existing for $key (recovered)"
               fi
@@ -116,7 +132,7 @@ jobs:
                   # declare a Maintenance-Start/Maintenance-End window (NZ
                   # time) in its body; if now falls inside it, the app being
                   # down is expected, so skip creating an outage issue.
-                  maintenance_body=$(gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
+                  maintenance_body=$(gh_retry gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
                     --json body --jq '(.[0].body // "")')
 
                   # grep exits 1 when there's no match (the normal case when
@@ -138,7 +154,7 @@ jobs:
                   if [[ "$in_window" == true ]]; then
                     echo "$key is down but within an announced maintenance window, skipping"
                   else
-                    gh issue create --repo "$GH_REPO" \
+                    gh_retry gh issue create --repo "$GH_REPO" \
                       --title "$key is unreachable" \
                       --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
                       --label "$label" --label auto-outage
@@ -173,4 +189,4 @@ jobs:
           # Process substitution (< <(...)) runs the while loop in this same
           # shell, not a subshell, so state_json's accumulated updates are
           # still here — write them back once, rather than on every app.
-          gh issue edit "$state_issue_number" --repo "$GH_REPO" --body "$state_json"
+          gh_retry gh issue edit "$state_issue_number" --repo "$GH_REPO" --body "$state_json"
