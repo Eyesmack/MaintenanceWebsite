@@ -129,9 +129,14 @@ function renderIncidentMonths(recentIssues, months) {
 // live-appended comments), same content depth as app.html's own open-issue
 // cards. This is also what index.html's lighter teaser cards link to via
 // "View Live Incident" (history#incident-<number> — see
-// common.js's renderOpenIncidentCard, which sets that id).
+// common.js's renderOpenIncidentCard, which sets that id). Renders into
+// #live-incidents-list (a container separate from the heading/last-updated
+// row) since, unlike the monthly archive below, this section polls (see
+// updateLiveIncidents/refreshLiveIncidents) and needs to be rebuildable
+// without wiping its own header each cycle.
 function renderLiveIncidents(recentIssues) {
   const section = document.getElementById('live-incidents');
+  const list = document.getElementById('live-incidents-list');
   const openIssues = recentIssues.filter((entry) => entry.issue.state === 'open');
 
   if (!openIssues.length) {
@@ -139,10 +144,50 @@ function renderLiveIncidents(recentIssues) {
     return;
   }
 
+  list.innerHTML = '';
   for (const entry of openIssues) {
-    section.appendChild(renderOpenIncidentCard(entry, { appendComments: true }));
+    list.appendChild(renderOpenIncidentCard(entry, { appendComments: true }));
   }
   section.classList.remove('d-none');
+}
+
+const REFRESH_INTERVAL_MS = 60 * 1000;
+
+let cachedAppNames = [];
+let cachedLiveIncidentsFingerprint = null;
+
+// Same fingerprint-diff pattern as status.js's updateRecentUpdates/app.js's
+// updateAppRecentUpdates: skips the rebuild when the open-issue set hasn't
+// changed, but busts issueCommentsCache on a real change — e.g. a new
+// comment on an open incident bumps that issue's updated_at, which needs a
+// fresh fetchIssueComments call rather than the stale cached list.
+function updateLiveIncidents(recentIssues) {
+  const openIssues = recentIssues.filter((entry) => entry.issue.state === 'open');
+  const fingerprint = fingerprintRecentIssues(openIssues);
+  if (fingerprint === cachedLiveIncidentsFingerprint) return;
+
+  issueCommentsCache.clear();
+  cachedLiveIncidentsFingerprint = fingerprint;
+  renderLiveIncidents(recentIssues);
+}
+
+// Only Live Incidents polls — the monthly summary/incident archive below
+// it is historical and doesn't change while the page is open (an incident
+// closing mid-visit just needs a manual reload to move it into the
+// archive; out of scope here, same as index.html's Recent Updates not
+// live-migrating a card between its open/closed layouts either).
+async function refreshLiveIncidents() {
+  const { recentIssues } = await fetchAppIssues(cachedAppNames);
+  updateLiveIncidents(recentIssues);
+
+  lastUpdatedAt = new Date();
+  secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
+  renderLastUpdatedCountdown('live-incidents-last-updated');
+}
+
+async function scheduleLiveIncidentsRefresh() {
+  await refreshLiveIncidents();
+  setTimeout(scheduleLiveIncidentsRefresh, REFRESH_INTERVAL_MS);
 }
 
 // Deep-linked from index.html's/app.html's "View full incident" and "View
@@ -175,6 +220,7 @@ async function init() {
 
   const apps = await loadApps();
   const appNames = Object.keys(apps);
+  cachedAppNames = appNames;
   const [{ recentIssues, downEventsByApp }, monitoringStartByApp] =
     await Promise.all([fetchAppIssues(appNames), fetchMonitoringStartDates()]);
 
@@ -186,7 +232,7 @@ async function init() {
   const months = buildMonthList(new Date(MONITORING_START_DATE), now);
 
   renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp);
-  renderLiveIncidents(recentIssues);
+  updateLiveIncidents(recentIssues);
   const hasIncidents = renderIncidentMonths(recentIssues, months);
 
   const status = document.getElementById('history-status');
@@ -194,6 +240,12 @@ async function init() {
   if (hasIncidents) status.classList.add('d-none');
 
   focusIncidentFromHash();
+
+  lastUpdatedAt = new Date();
+  secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
+  renderLastUpdatedCountdown('live-incidents-last-updated');
+  startCountdownTicker('live-incidents-last-updated');
+  setTimeout(scheduleLiveIncidentsRefresh, REFRESH_INTERVAL_MS);
 }
 
 init();

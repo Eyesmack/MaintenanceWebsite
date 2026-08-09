@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.21.3';
+const VERSION_NUMBER = 'v1.21.4';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -318,7 +318,7 @@ async function preloadIssueComments(container, issues) {
       list.className = 'mt-2';
 
       const label = document.createElement('p');
-      label.className = 'small opacity-75 mb-1';
+      label.className = 'small opacity-75 mb-1 text';
       label.textContent = 'Updates:';
       list.appendChild(label);
 
@@ -328,12 +328,12 @@ async function preloadIssueComments(container, issues) {
 
         const edited = comment.updated_at !== comment.created_at;
         const meta = document.createElement('p');
-        meta.className = 'small opacity-75 mb-0';
+        meta.className = 'small opacity-75 mb-0 text';
         meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
 
         // A div, not a <p> — same reasoning as the description below.
         const commentBody = document.createElement('div');
-        commentBody.className = 'markdown-body mb-0';
+        commentBody.className = 'markdown-body mb-0 text';
         if (comment.body_html) {
           commentBody.innerHTML = comment.body_html;
         } else {
@@ -638,7 +638,7 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
   affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
 
   const description = document.createElement('div');
-  description.className = 'markdown-body mb-2';
+  description.className = 'markdown-body mb-2 text';
   if (issue.body_html) {
     description.innerHTML = issue.body_html;
   } else {
@@ -647,7 +647,7 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
 
   const timestamp = document.createElement('p');
   timestamp.dataset.timestamp = '';
-  timestamp.className = 'small opacity-75 mb-2';
+  timestamp.className = 'small opacity-75 mb-2 text';
   timestamp.textContent = timestampText(issue, isUpdate);
 
   body.append(affectedApps, description, timestamp);
