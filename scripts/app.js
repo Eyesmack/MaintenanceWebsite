@@ -1,14 +1,12 @@
 // app.js — renders one app's detail page (app.html?app=<name>), driven by
 // the `app` query param matched against apps.json's keys. Mirrors
 // status.js's live-refresh architecture (refreshAppStatus/scheduleRefresh)
-// scoped to one fixed set of elements instead of one card per app.
-// The Recent Events accordion and the uptime history strip are shared
-// with status.js via common.js's renderIssueAccordion/renderUptimeStrip —
-// they were byte-identical, unlike history.js's renderIncidentItem, which
-// is a genuinely different layout and stays page-local by design. The
-// header/favicon/uptime-stat/latency-stat rendering below stays page-local
-// too — different DOM targets and different stat sets than status.js's
-// per-card versions.
+// scoped to one fixed set of elements instead of one card per app. Recent
+// Events' cards and the uptime history strip are shared with status.js via
+// common.js's renderClosedIncidentCard/renderOpenIncidentCard/
+// renderUptimeStrip. The header/favicon/uptime-stat/latency-stat rendering
+// below stays page-local — different DOM targets and different stat sets
+// than status.js's per-card versions.
 
 const APP_UPTIME_HISTORY_DAYS = 90;
 const LATENCY_HISTORY_DAYS = 90;
@@ -41,6 +39,11 @@ let baseTitle = null; // e.g. "Notflix | Status | Isaac Mason", set once targetA
 // init() alongside apps.json, resolved for targetApp via common.js's
 // getMonitoringStart.
 let cachedMonitoringStartByApp = {};
+
+// issue-summaries.json's result ({ issueNumber: summaryText }) — refetched
+// every 60s cycle alongside fetchAppIssues/fetchLatencyHistory, so a
+// just-closed issue's AI summary shows up within a cycle or two.
+let cachedIssueSummaries = {};
 
 // formatShortTime, lastUpdatedAt, secondsUntilRefresh, renderLastUpdatedCountdown,
 // tickCountdown, and startCountdownTicker now live in common.js (loaded
@@ -217,24 +220,58 @@ function renderAppLatencyChart(samples) {
   renderLatencyChart(document.getElementById('app-latency-chart'), labels, values, { compact: false });
 }
 
+// Builds one card per entry into #recent-updates-list — closed issues get
+// the AI-summarized card, open ones get the full live card (real
+// description + live-appended comments; no liveIncidentHref, since this
+// page already *is* the live view unlike index.html's lighter teaser
+// cards). No count/slicing step here (unlike status.js's equivalent) —
+// this shows every matched issue for this one app.
+function renderAppRecentUpdates(recentIssues) {
+  const section = document.getElementById('recent-updates');
+
+  if (!recentIssues.length) {
+    section.classList.add('d-none');
+    return;
+  }
+
+  const list = document.getElementById('recent-updates-list');
+  list.innerHTML = '';
+  for (const entry of recentIssues) {
+    const card = entry.issue.state === 'closed'
+      ? renderClosedIncidentCard(entry, cachedIssueSummaries)
+      : renderOpenIncidentCard(entry, { appendComments: true });
+    list.appendChild(card);
+  }
+  section.classList.remove('d-none');
+}
+
 let cachedFingerprint = null;
+let cachedIssueSummariesFingerprint = null;
 
 // Adapted from status.js's updateRecentUpdates: same fingerprint-diff
-// skip, so an unchanged issue set doesn't rebuild the accordion (and
-// doesn't clear issueCommentsCache) on every 60s tick. No page-local
-// render wrapper needed here (unlike status.js) — there's no count/
-// slicing step, so this calls common.js's renderIssueAccordion directly.
+// skip, so an unchanged issue set doesn't rebuild the cards (and doesn't
+// clear issueCommentsCache, an actual network-request cost) on every 60s
+// tick. Tracked separately from cachedIssueSummariesFingerprint — a closed
+// issue's AI summary can land on a later cycle without the issue's own
+// state/updated_at changing, so relying on the issue fingerprint alone
+// would leave a stale "Summary pending…" card up indefinitely.
 function updateAppRecentUpdates(recentIssues) {
   const fingerprint = fingerprintRecentIssues(recentIssues);
-  if (fingerprint === cachedFingerprint) return;
+  const summariesFingerprint = JSON.stringify(cachedIssueSummaries);
+  if (fingerprint === cachedFingerprint && summariesFingerprint === cachedIssueSummariesFingerprint) return;
+
+  if (fingerprint !== cachedFingerprint) {
+    issueCommentsCache.clear();
+  }
   cachedFingerprint = fingerprint;
-  issueCommentsCache.clear();
-  renderIssueAccordion(recentIssues);
+  cachedIssueSummariesFingerprint = summariesFingerprint;
+  renderAppRecentUpdates(recentIssues);
 }
 
 async function refreshAppPage() {
-  const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp] =
-    await Promise.all([fetchAppIssues(allAppNames), fetchLatencyHistory()]);
+  const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
+    await Promise.all([fetchAppIssues(allAppNames), fetchLatencyHistory(), fetchIssueSummaries()]);
+  cachedIssueSummaries = issueSummaries;
 
   const issues = downEventsByApp[targetApp] || [];
 
@@ -283,8 +320,8 @@ async function init() {
   cachedMonitoringStartByApp = monitoringStartByApp;
 
   document.getElementById('app-loading').classList.add('d-none');
-  document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;
-  document.getElementById('version-text-top').textContent = STATUS_PAGE_VERSION;
+  document.getElementById('version-text').textContent = VERSION_NUMBER;
+  document.getElementById('version-text-top').textContent = VERSION_NUMBER;
 
   if (!targetApp) {
     renderNotFound(); // No GitHub proxy fetch — nothing to look up.

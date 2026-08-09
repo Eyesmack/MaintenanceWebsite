@@ -56,8 +56,10 @@ body {
 }
 /* Bootstrap's accordion defaults to a light theme; re-skin it to match
    the rest of the page (same tones as .sub-card/.text), and recolor
-   the chevron icon so it's visible against a dark button background. */
-#recent-updates-accordion {
+   the chevron icon so it's visible against a dark button background.
+   A class, not an ID — history.js builds one of these per month, so
+   there can be several on the page at once. */
+.incident-accordion {
   --bs-accordion-color: #cbd5e1;
   --bs-accordion-bg: rgba(255, 255, 255, 0.05);
   --bs-accordion-border-color: rgba(255, 255, 255, 0.12);
@@ -82,7 +84,7 @@ body {
   align-items: center;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
-#recent-updates-accordion .accordion-button {
+.incident-accordion .accordion-button {
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }

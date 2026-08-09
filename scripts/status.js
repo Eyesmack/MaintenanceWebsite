@@ -11,12 +11,13 @@ let faviconDataUrlCache = {};
 // getTimeZoneOffsetMinutes, parseZonedDateTime, extractMaintenanceWindow,
 // fetchAppIssues, timestampText, shortTimestampText, issueCommentsCache,
 // fetchIssueComments, preloadIssueComments, fingerprintRecentIssues,
-// renderIssueAccordion, renderUptimeStrip, fetchLatencyHistory,
-// renderLatencyChart, formatShortTime, lastUpdatedAt, secondsUntilRefresh,
+// renderIssueAccordion, renderClosedIncidentCard, renderOpenIncidentCard,
+// renderUptimeStrip, fetchLatencyHistory, renderLatencyChart,
+// formatShortTime, lastUpdatedAt, secondsUntilRefresh,
 // renderLastUpdatedCountdown, tickCountdown, startCountdownTicker,
-// fetchMonitoringStartDates, getMonitoringStart, and STATUS_PAGE_VERSION
-// now live in common.js (loaded before this file), shared with history.js
-// and/or app.js.
+// fetchMonitoringStartDates, getMonitoringStart, fetchIssueSummaries, and
+// VERSION_NUMBER now live in common.js (loaded before this file),
+// shared with history.js and/or app.js.
 
 const UPTIME_TIMEFRAMES = {
   '24h': { label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
@@ -264,15 +265,26 @@ let cachedApps = {};
 // new app is added), resolved per-app via common.js's getMonitoringStart.
 let cachedMonitoringStartByApp = {};
 
+// issue-summaries.json's result ({ issueNumber: summaryText }) — refreshed
+// every cycle (unlike monitoring-start.json) so a just-closed issue's AI
+// summary shows up within a refresh or two instead of only after a full
+// page reload.
+let cachedIssueSummaries = {};
+
 // { appName: colElement }, from renderStatusCards() — kept so the refresh
 // loop can update the existing card DOM in place instead of rebuilding it
 // every cycle (the app list never changes at runtime).
 let cachedCols = {};
 
 // Fingerprint of the last-rendered Recent Updates issue list, so the
-// refresh loop only rebuilds that accordion (which would collapse any
-// expanded item) when something actually changed.
+// refresh loop only rebuilds the cards (and clears issueCommentsCache, an
+// actual network-request cost) when the issues themselves actually
+// changed. Tracked separately from cachedIssueSummariesFingerprint below —
+// a closed issue's AI summary can land on a later refresh cycle without
+// its own state/updated_at changing, so relying on this fingerprint alone
+// would leave a stale "Summary pending…" card up indefinitely.
 let cachedRecentIssuesFingerprint = null;
+let cachedIssueSummariesFingerprint = null;
 
 function renderUptime(app) {
   const select = document.getElementById('uptime-timeframe-select');
@@ -336,22 +348,49 @@ function getUptimeWindow(timeframeKey, now, app) {
   return [start, now];
 }
 
-// Re-slices the cached full issue list by the selected count and hands
-// off to the shared accordion renderer (common.js) — count/slicing is the
-// only status.js-specific piece here; see cachedRecentIssues above.
+// Re-slices the cached full issue list by the selected count and builds
+// one card per entry — closed issues get the AI-summarized card, open
+// ones get the live card with a link through to history.html's Live
+// Incidents section (common.js's renderClosedIncidentCard/
+// renderOpenIncidentCard). count/slicing is the only status.js-specific
+// piece here; see cachedRecentIssues above.
 function renderRecentUpdates(count) {
-  renderIssueAccordion(cachedRecentIssues.slice(0, count));
+  const section = document.getElementById('recent-updates');
+  const entries = cachedRecentIssues.slice(0, count);
+
+  if (!entries.length) {
+    section.classList.add('d-none');
+    return;
+  }
+
+  const list = document.getElementById('recent-updates-list');
+  list.innerHTML = '';
+  for (const entry of entries) {
+    const card = entry.issue.state === 'closed'
+      ? renderClosedIncidentCard(entry, cachedIssueSummaries)
+      : renderOpenIncidentCard(entry, { appendComments: false, liveIncidentHref: `history#incident-${entry.issue.number}` });
+    list.appendChild(card);
+  }
+  section.classList.remove('d-none');
 }
 
-// Skips rebuilding the accordion when nothing has changed since the last
-// check — renderRecentUpdates() wipes and rebuilds it from scratch, which
-// would collapse any item the user currently has expanded.
+// Skips rebuilding the cards when nothing relevant has changed since the
+// last check. Two independent things can make a rebuild necessary: the
+// issue list itself (state/updated_at — in which case cached comments are
+// stale too and get cleared), or just cachedIssueSummaries picking up a
+// summary that wasn't there yet (the issue itself hasn't changed, so
+// comments don't need clearing for that alone).
 function updateRecentUpdates(recentIssues) {
-  const fingerprint = fingerprintRecentIssues(recentIssues);
-  if (fingerprint === cachedRecentIssuesFingerprint) return;
-  cachedRecentIssuesFingerprint = fingerprint;
+  const issuesFingerprint = fingerprintRecentIssues(recentIssues);
+  const summariesFingerprint = JSON.stringify(cachedIssueSummaries);
+  if (issuesFingerprint === cachedRecentIssuesFingerprint && summariesFingerprint === cachedIssueSummariesFingerprint) return;
+
+  if (issuesFingerprint !== cachedRecentIssuesFingerprint) {
+    issueCommentsCache.clear();
+  }
+  cachedRecentIssuesFingerprint = issuesFingerprint;
+  cachedIssueSummariesFingerprint = summariesFingerprint;
   cachedRecentIssues = recentIssues;
-  issueCommentsCache.clear();
   renderRecentUpdates(Number(document.getElementById('recent-updates-count').value));
 }
 
@@ -365,11 +404,12 @@ function initRecentUpdates() {
 // app every ~1 minute server-side), and no rebuilding of #status-cards
 // (the app list never changes at runtime; cachedCols reuses the same DOM).
 async function refreshAppStatus() {
-  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp] =
-    await Promise.all([fetchAppIssues(cachedAppNames), fetchLatencyHistory()]);
+  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
+    await Promise.all([fetchAppIssues(cachedAppNames), fetchLatencyHistory(), fetchIssueSummaries()]);
 
   cachedDownEventsByApp = downEventsByApp;
   cachedLatencyByApp = latencyByApp;
+  cachedIssueSummaries = issueSummaries;
 
   // "Online" comes entirely from the workflow's own server-side checks (an
   // open auto-outage issue) or an announced maintenance window.
@@ -393,7 +433,7 @@ async function refreshAppStatus() {
   updateRecentUpdates(recentIssues);
 
   document.getElementById('last-updated').textContent =
-    `Last updated: ${formatTimestamp(new Date())} · ${STATUS_PAGE_VERSION}`;
+    `Last updated: ${formatTimestamp(new Date())} · ${VERSION_NUMBER}`;
 
   lastUpdatedAt = new Date();
   secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;
@@ -403,7 +443,7 @@ async function refreshAppStatus() {
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
 // Re-fetches the page's own live common.js (cache-busted) and compares
-// its STATUS_PAGE_VERSION to the one already running. Checking the live
+// its VERSION_NUMBER to the one already running. Checking the live
 // file itself, rather than the repo/API, means this only ever reloads
 // once a new deploy is actually being served — no false positive during
 // GitHub Pages' own build/propagation lag right after a push.
@@ -412,8 +452,8 @@ async function checkForNewVersion() {
     const res = await fetch(`scripts/common.js?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return false;
     const text = await res.text();
-    const match = text.match(/const STATUS_PAGE_VERSION = '([^']+)'/);
-    if (match && match[1] !== STATUS_PAGE_VERSION) {
+    const match = text.match(/const VERSION_NUMBER = '([^']+)'/);
+    if (match && match[1] !== VERSION_NUMBER) {
       location.reload();
       return true;
     }
@@ -441,7 +481,7 @@ async function init() {
   initRecentUpdates();
   startCountdownTicker('header-last-updated');
 
-  document.getElementById('version-text').textContent = `${STATUS_PAGE_VERSION}`;
+  document.getElementById('version-text').textContent = `${VERSION_NUMBER}`;
 
   await scheduleRefresh();
 }

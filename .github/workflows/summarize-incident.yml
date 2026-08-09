@@ -1,0 +1,79 @@
+name: Summarize Closed Incident
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: read
+  contents: write
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Summarize and record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -uo pipefail
+
+          # Only summarize issues that carry a real app-name label — skips
+          # the internal status-check-state bookkeeping issue and anything
+          # unrelated to apps.json automatically, same matching convention
+          # fetchAppIssues uses client-side (lowercase label vs lowercase
+          # app name).
+          app_labels=$(jq -r 'keys[] | ascii_downcase' data/apps.json)
+          issue_labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json labels --jq '.labels[].name | ascii_downcase')
+
+          matched=false
+          while IFS= read -r label; do
+            [[ -n "$label" ]] && grep -qxF "$label" <<< "$app_labels" && matched=true && break
+          done <<< "$issue_labels"
+
+          if [[ "$matched" != true ]]; then
+            echo "Issue #$ISSUE_NUMBER has no app label, skipping"
+            exit 0
+          fi
+
+          issue_json=$(gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json title,body,comments)
+          title=$(echo "$issue_json" | jq -r '.title')
+          body=$(echo "$issue_json" | jq -r '.body // ""')
+          comments=$(echo "$issue_json" | jq -r '[.comments[].body] | join("\n\n---\n\n")')
+
+          system_prompt='Summarize this resolved incident for a public status page in 1-2 short, plain-English sentences aimed at end users, not developers. State what happened and that it is now resolved. Plain text only, no markdown.'
+          user_prompt=$(jq -n --arg title "$title" --arg body "$body" --arg comments "$comments" \
+            '"Title: \($title)\n\nDescription: \($body)\n\nUpdates:\n\($comments)"')
+
+          request_body=$(jq -n --arg sys "$system_prompt" --argjson user "$user_prompt" \
+            '{messages: [{role: "system", content: $sys}, {role: "user", content: $user}], max_tokens: 300}')
+
+          response=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/ai/run/@cf/meta/llama-3.1-8b-instruct" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$request_body")
+
+          summary=$(echo "$response" | jq -r '.result.response // empty' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [[ -z "$summary" ]]; then
+            echo "No summary text in Workers AI response, aborting"
+            echo "$response"
+            exit 1
+          fi
+
+          summaries_json=$(cat data/issue-summaries.json 2>/dev/null || echo '{}')
+          echo "$summaries_json" | jq empty >/dev/null 2>&1 || summaries_json='{}'
+          summaries_json=$(echo "$summaries_json" | jq --arg k "$ISSUE_NUMBER" --arg s "$summary" '.[$k] = $s')
+          echo "$summaries_json" > data/issue-summaries.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/issue-summaries.json
+          git commit -m "Summarize resolved incident #$ISSUE_NUMBER"
+          git pull --rebase --autostash
+          git push

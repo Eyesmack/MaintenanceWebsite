@@ -86,48 +86,13 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
   document.getElementById('monthly-summary-wrap').classList.remove('d-none');
 }
 
-function renderIncidentItem(entry) {
-  const { apps, issue, isUpdate } = entry;
-  const [start, end] = resolveIssueInterval(issue, new Date());
-
-  const item = document.createElement('div');
-  item.className = 'sub-card rounded p-3 mb-3';
-
-  const titleRow = document.createElement('div');
-  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
-
-  const title = document.createElement('span');
-  title.className = 'text fw-semibold';
-  title.textContent = issue.title;
-
-  const badge = document.createElement('span');
-  badge.className = `badge ${isUpdate ? 'bg-info' : 'bg-secondary'}`;
-  badge.textContent = isUpdate ? 'Maintenance' : 'Incident';
-
-  titleRow.append(title, badge);
-
-  const affectedApps = document.createElement('p');
-  affectedApps.className = 'small opacity-75 mb-1 text';
-  affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
-
-  const timing = document.createElement('p');
-  timing.className = 'small opacity-75 mb-2 text';
-  timing.textContent = `${formatTimestamp(start)} — ${formatTimestamp(end)} (${formatDuration(end - start)})`;
-
-  const link = document.createElement('a');
-  link.href = issue.html_url;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  link.className = 'small';
-  link.textContent = 'View on GitHub ↗';
-
-  item.append(titleRow, affectedApps, timing, link);
-  return item;
-}
-
 // Only months with at least one closed incident get a heading — an empty
 // "August 2026" section with nothing under it isn't useful, unlike the
 // summary table above where an all-"No downtime" month is worth showing.
+// Each month gets its own independent accordion (not one accordion
+// spanning every month) — reuses common.js's renderIssueAccordion, the
+// same per-issue markup/behavior (raw description + live comments) that
+// index.html's/app.html's Recent Updates used to show for everything.
 function renderIncidentMonths(recentIssues, months) {
   const container = document.getElementById('incident-months');
 
@@ -150,17 +115,39 @@ function renderIncidentMonths(recentIssues, months) {
     heading.textContent = getMonthLabel(year, month);
     container.appendChild(heading);
 
-    for (const entry of entries) {
-      container.appendChild(renderIncidentItem(entry));
-    }
+    const accordion = document.createElement('div');
+    accordion.className = 'accordion incident-accordion';
+    container.appendChild(accordion);
+    renderIssueAccordion(accordion, entries);
   }
 
   return hasAny;
 }
 
+// Currently-open incidents/maintenance windows, shown above the monthly
+// archive in their own section — the full "live" card (real description +
+// live-appended comments), same content depth as app.html's own open-issue
+// cards. This is also what index.html's lighter teaser cards link to via
+// "View Live Incident" (history#incident-<number> — see
+// common.js's renderOpenIncidentCard, which sets that id).
+function renderLiveIncidents(recentIssues) {
+  const section = document.getElementById('live-incidents');
+  const openIssues = recentIssues.filter((entry) => entry.issue.state === 'open');
+
+  if (!openIssues.length) {
+    section.classList.add('d-none');
+    return;
+  }
+
+  for (const entry of openIssues) {
+    section.appendChild(renderOpenIncidentCard(entry, { appendComments: true }));
+  }
+  section.classList.remove('d-none');
+}
+
 async function init() {
-  document.getElementById('version-text').textContent = STATUS_PAGE_VERSION;
-  document.getElementById('version-text-top').textContent = STATUS_PAGE_VERSION;
+  document.getElementById('version-text').textContent = VERSION_NUMBER;
+  document.getElementById('version-text-top').textContent = VERSION_NUMBER;
 
   const apps = await loadApps();
   const appNames = Object.keys(apps);
@@ -175,6 +162,7 @@ async function init() {
   const months = buildMonthList(new Date(MONITORING_START_DATE), now);
 
   renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp);
+  renderLiveIncidents(recentIssues);
   const hasIncidents = renderIncidentMonths(recentIssues, months);
 
   const status = document.getElementById('history-status');

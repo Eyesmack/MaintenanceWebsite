@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const STATUS_PAGE_VERSION = 'v1.20.3';
+const VERSION_NUMBER = 'v1.21.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -48,6 +48,19 @@ async function fetchMonitoringStartDates() {
 function getMonitoringStart(app, monitoringStartByApp) {
   const iso = monitoringStartByApp[app];
   return iso ? new Date(iso) : new Date(MONITORING_START_DATE);
+}
+
+// issue-summaries.json is committed by the summarize-incident.yml workflow
+// whenever an app-labeled issue closes — same same-origin static-file
+// pattern as the other data/*.json fetches, no GitHub API involvement.
+async function fetchIssueSummaries() {
+  try {
+    const res = await fetch(`data/issue-summaries.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 // Open issues in this repo labeled with an app key (e.g. "notflix")
@@ -284,11 +297,11 @@ async function fetchIssueComments(issueNumber) {
 // a debugging update can be posted at any point, not just when closing),
 // in parallel, and injects each issue's comment list as soon as it
 // resolves — rather than waiting for the user to expand that item.
-// issueCommentsCache dedupes across calls. Assumes the caller's page has
-// a #recent-updates-accordion with one [data-issue-number] item per
-// issue (true of both index.html and app.html).
-async function preloadIssueComments(issues) {
-  const accordion = document.getElementById('recent-updates-accordion');
+// issueCommentsCache dedupes across calls. `container` just needs one
+// [data-issue-number] item per issue with a nested .incident-body — true
+// of both the accordion's collapse-body (history.js's per-month accordions)
+// and the flat always-expanded open-incident card (renderOpenIncidentCard).
+async function preloadIssueComments(container, issues) {
   await Promise.all(
     issues.map(async ({ issue }) => {
       if (!issueCommentsCache.has(issue.number)) {
@@ -297,7 +310,7 @@ async function preloadIssueComments(issues) {
       const comments = issueCommentsCache.get(issue.number);
       if (!comments.length) return;
 
-      const body = accordion.querySelector(`[data-issue-number="${issue.number}"] .accordion-body`);
+      const body = container.querySelector(`[data-issue-number="${issue.number}"] .incident-body`);
       if (!body || body.querySelector('[data-comments]')) return;
 
       const list = document.createElement('div');
@@ -382,21 +395,14 @@ function fingerprintRecentIssues(recentIssues) {
   return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
 }
 
-// Builds the Recent Updates accordion for a plain list of { apps, issue,
-// isUpdate } entries — no count/slicing logic here, callers pass exactly
-// what should render (status.js pre-slices its cached full list by the
-// selected count; app.js passes its already-filtered-to-one-app list).
-// Assumes #recent-updates and #recent-updates-accordion elements exist
-// (true of both index.html and app.html).
-function renderIssueAccordion(issues) {
-  const section = document.getElementById('recent-updates');
-  const accordion = document.getElementById('recent-updates-accordion');
-
-  if (!issues.length) {
-    section.classList.add('d-none');
-    return;
-  }
-
+// Builds an accordion of { apps, issue, isUpdate } entries into the given
+// container — no count/slicing/empty-check logic here, callers pass
+// exactly what should render and skip calling this at all when there's
+// nothing to show (history.js's per-month loop only ever calls this for
+// months that already have ≥1 entry). Callers can invoke this multiple
+// times against different containers in the same page load (one per
+// month) — each call only touches its own `accordion` element.
+function renderIssueAccordion(accordion, issues) {
   // Capture which items are currently expanded so the rebuild below (which
   // happens on every fingerprint change from the auto-refresh loop, not
   // just a manual count-selector change) doesn't snap them back closed —
@@ -471,7 +477,7 @@ function renderIssueAccordion(issues) {
     collapse.className = 'accordion-collapse collapse';
 
     const collapseBody = document.createElement('div');
-    collapseBody.className = 'accordion-body';
+    collapseBody.className = 'accordion-body incident-body';
 
     const affectedApps = document.createElement('p');
     affectedApps.className = 'small opacity-75 mb-2';
@@ -510,8 +516,140 @@ function renderIssueAccordion(issues) {
     accordion.appendChild(item);
   }
 
-  section.classList.remove('d-none');
-  preloadIssueComments(issues);
+  preloadIssueComments(accordion, issues);
+}
+
+// Flat, always-visible card for a resolved incident/maintenance entry —
+// used everywhere a closed issue is shown (index.html's and app.html's
+// Recent Updates lists). Shows the AI-generated summary (from
+// issue-summaries.json, see fetchIssueSummaries) in place of the raw
+// GitHub body — a resolved issue's story is short and settled, so there's
+// no need for the reader to expand anything.
+function renderClosedIncidentCard(entry, summariesByIssue) {
+  const { apps, issue, isUpdate } = entry;
+  const [start, end] = resolveIssueInterval(issue, new Date());
+
+  const item = document.createElement('div');
+  item.className = 'sub-card rounded p-3 mb-3';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
+
+  const title = document.createElement('span');
+  title.className = 'text fw-semibold';
+  title.textContent = issue.title;
+
+  const badge = document.createElement('span');
+  badge.className = `badge ${isUpdate ? 'bg-info' : 'bg-secondary'}`;
+  badge.textContent = isUpdate ? 'Maintenance' : 'Incident';
+
+  titleRow.append(title, badge);
+
+  const affectedApps = document.createElement('p');
+  affectedApps.className = 'small opacity-75 mb-1 text';
+  affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+
+  // A closed issue this feature shipped after (or one Workers AI hasn't
+  // gotten to yet — the summarize-incident.yml run lands within seconds
+  // of closing, but isn't instant) has no summary yet; say so rather than
+  // showing nothing.
+  const summary = document.createElement('p');
+  summary.className = 'mb-2 text';
+  summary.textContent = summariesByIssue[issue.number] || 'Summary pending…';
+
+  const timing = document.createElement('p');
+  timing.className = 'small opacity-75 mb-2 text';
+  timing.textContent = `${formatTimestamp(start)} — ${formatTimestamp(end)} (${formatDuration(end - start)})`;
+
+  const link = document.createElement('a');
+  link.href = issue.html_url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.className = 'small';
+  link.textContent = 'View on GitHub ↗';
+
+  item.append(titleRow, affectedApps, summary, timing, link);
+  return item;
+}
+
+// Flat, always-visible card for an open/ongoing entry — the "everything an
+// accordion item would show, minus the click-to-expand" version, since an
+// ongoing incident is exactly the thing a visitor doesn't want to have to
+// dig for. `appendComments` controls whether live-appended comments are
+// fetched in (app.html, history.html's Live Incidents — the "real" views);
+// `liveIncidentHref`, when given instead, adds a link to that fuller view
+// (index.html's lighter teaser card, pointing at history.html).
+// `item.id`/`dataset.issueNumber` are set unconditionally — unused when
+// nothing links here, load-bearing when index.html's "View Live Incident"
+// link needs an anchor to scroll to, and when preloadIssueComments needs
+// to find this card by issue number.
+function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
+  const { apps, issue, isUpdate } = entry;
+
+  const item = document.createElement('div');
+  item.className = 'sub-card rounded p-3 mb-3';
+  item.id = `incident-${issue.number}`;
+  item.dataset.issueNumber = String(issue.number);
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
+
+  const title = document.createElement('span');
+  title.className = 'text fw-semibold';
+  title.textContent = issue.title;
+
+  const badge = document.createElement('span');
+  badge.className = `badge ${isUpdate ? 'bg-info' : 'bg-danger'}`;
+  badge.textContent = isUpdate ? 'Planned' : 'Open';
+
+  titleRow.append(title, badge);
+
+  const body = document.createElement('div');
+  body.className = 'incident-body';
+
+  const affectedApps = document.createElement('p');
+  affectedApps.className = 'small opacity-75 mb-1 text';
+  affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+
+  const description = document.createElement('div');
+  description.className = 'markdown-body mb-2';
+  if (issue.body_html) {
+    description.innerHTML = issue.body_html;
+  } else {
+    description.textContent = issue.body || 'No further details provided.';
+  }
+
+  const timestamp = document.createElement('p');
+  timestamp.dataset.timestamp = '';
+  timestamp.className = 'small opacity-75 mb-2';
+  timestamp.textContent = timestampText(issue, isUpdate);
+
+  body.append(affectedApps, description, timestamp);
+
+  const links = document.createElement('div');
+  links.className = 'd-flex gap-3';
+
+  if (liveIncidentHref) {
+    const liveLink = document.createElement('a');
+    liveLink.href = liveIncidentHref;
+    liveLink.className = 'small';
+    liveLink.textContent = 'View Live Incident';
+    links.appendChild(liveLink);
+  }
+
+  const ghLink = document.createElement('a');
+  ghLink.href = issue.html_url;
+  ghLink.target = '_blank';
+  ghLink.rel = 'noopener';
+  ghLink.className = 'small';
+  ghLink.textContent = 'View on GitHub ↗';
+  links.appendChild(ghLink);
+
+  item.append(titleRow, body, links);
+
+  if (appendComments) preloadIssueComments(item, [entry]);
+
+  return item;
 }
 
 // Fixed-length day-by-day history strip shared by status.js's per-card
