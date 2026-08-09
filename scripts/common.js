@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.21.1';
+const VERSION_NUMBER = 'v1.21.2';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -420,6 +420,7 @@ function renderIssueAccordion(accordion, issues) {
 
     const item = document.createElement('div');
     item.className = 'accordion-item';
+    item.id = `incident-${issue.number}`;
     item.dataset.issueNumber = String(issue.number);
 
     // A flex row: the toggle button (still the only click target for
@@ -535,8 +536,15 @@ function renderClosedIncidentCard(entry, summariesByIssue) {
   const titleRow = document.createElement('div');
   titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
 
-  const title = document.createElement('span');
-  title.className = 'text fw-semibold';
+  // Links to this incident's entry in its month's accordion on
+  // history.html (see renderIssueAccordion's matching item.id) — both the
+  // title and the "View full incident" link below point at the same
+  // anchor, just as two different click targets on the same card.
+  const historyHref = `history#incident-${issue.number}`;
+
+  const title = document.createElement('a');
+  title.className = 'text fw-semibold app-name-link';
+  title.href = historyHref;
   title.textContent = issue.title;
 
   const badge = document.createElement('span');
@@ -561,14 +569,24 @@ function renderClosedIncidentCard(entry, summariesByIssue) {
   timing.className = 'small opacity-75 mb-2 text';
   timing.textContent = `${formatTimestamp(start)} — ${formatTimestamp(end)} (${formatDuration(end - start)})`;
 
-  const link = document.createElement('a');
-  link.href = issue.html_url;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  link.className = 'small';
-  link.textContent = 'View on GitHub ↗';
+  const links = document.createElement('div');
+  links.className = 'd-flex gap-3';
 
-  item.append(titleRow, affectedApps, summary, timing, link);
+  const fullIncidentLink = document.createElement('a');
+  fullIncidentLink.href = historyHref;
+  fullIncidentLink.className = 'small';
+  fullIncidentLink.textContent = 'View full incident';
+  links.appendChild(fullIncidentLink);
+
+  const ghLink = document.createElement('a');
+  ghLink.href = issue.html_url;
+  ghLink.target = '_blank';
+  ghLink.rel = 'noopener';
+  ghLink.className = 'small';
+  ghLink.textContent = 'View on GitHub ↗';
+  links.appendChild(ghLink);
+
+  item.append(titleRow, affectedApps, summary, timing, links);
   return item;
 }
 

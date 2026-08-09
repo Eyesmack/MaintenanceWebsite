@@ -145,6 +145,30 @@ function renderLiveIncidents(recentIssues) {
   section.classList.remove('d-none');
 }
 
+// Deep-linked from index.html's/app.html's "View full incident" and "View
+// Live Incident" links (history#incident-<number>). The browser's native
+// anchor-jump only fires once, right after the initial (still-empty) HTML
+// parses — by the time this dynamically-rendered content exists, it's long
+// since given up. Redone by hand once rendering is done, and additionally
+// expands the target if it's a collapsed accordion item (a closed
+// incident) so the reader doesn't land on a collapsed heading with nothing
+// to see.
+function focusIncidentFromHash() {
+  if (!location.hash.startsWith('#incident-')) return;
+  const target = document.getElementById(location.hash.slice(1));
+  if (!target) return;
+
+  const button = target.querySelector('.accordion-button');
+  const collapse = target.querySelector('.accordion-collapse');
+  if (button && collapse && !collapse.classList.contains('show')) {
+    button.classList.remove('collapsed');
+    button.setAttribute('aria-expanded', 'true');
+    collapse.classList.add('show');
+  }
+
+  target.scrollIntoView({ block: 'start' });
+}
+
 async function init() {
   document.getElementById('version-text').textContent = VERSION_NUMBER;
   document.getElementById('version-text-top').textContent = VERSION_NUMBER;
@@ -168,6 +192,8 @@ async function init() {
   const status = document.getElementById('history-status');
   status.textContent = hasIncidents ? '' : 'No incidents recorded yet.';
   if (hasIncidents) status.classList.add('d-none');
+
+  focusIncidentFromHash();
 }
 
 init();
