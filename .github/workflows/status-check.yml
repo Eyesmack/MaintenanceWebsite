@@ -22,7 +22,13 @@ jobs:
 
       - name: Check apps and manage outage issues
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT, not the default GITHUB_TOKEN — GitHub Actions never lets
+          # an action performed with GITHUB_TOKEN trigger other workflows
+          # (anti-recursion guard), so closing an issue here would silently
+          # never fire summarize-incident.yml's `issues: closed` trigger.
+          # A PAT isn't subject to that restriction. Needs Issues (read and
+          # write) + Contents (read and write) permission on this repo.
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
