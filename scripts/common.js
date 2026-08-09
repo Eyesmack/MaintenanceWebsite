@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.21.2';
+const VERSION_NUMBER = 'v1.21.3';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -533,8 +533,16 @@ function renderClosedIncidentCard(entry, summariesByIssue) {
   const item = document.createElement('div');
   item.className = 'sub-card rounded p-3 mb-3';
 
+  // .text lives on this row, not the title link itself — app-name-link's
+  // `color: inherit` needs a .text-colored ancestor to pick up (same
+  // pattern as the app-name link on each status card's <h5 class="text">).
+  // Putting .text and .app-name-link on the very same element would let
+  // app-name-link's `color: inherit` (declared after .text in style.css,
+  // so it wins the cascade) shadow .text's color and fall through to
+  // Bootstrap's default body text color instead — unreadable against this
+  // dark background.
   const titleRow = document.createElement('div');
-  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
+  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2 text';
 
   // Links to this incident's entry in its month's accordion on
   // history.html (see renderIssueAccordion's matching item.id) — both the
@@ -543,7 +551,7 @@ function renderClosedIncidentCard(entry, summariesByIssue) {
   const historyHref = `history#incident-${issue.number}`;
 
   const title = document.createElement('a');
-  title.className = 'text fw-semibold app-name-link';
+  title.className = 'fw-semibold app-name-link';
   title.href = historyHref;
   title.textContent = issue.title;
 
