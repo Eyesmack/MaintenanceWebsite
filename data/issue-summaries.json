@@ -1,3 +1,5 @@
 {
-  "12": "Planned server maintenance affecting all apps (Notflix, Homepage, Seerr, Dockge, CDN, phpMyAdmin, and Nginx Proxy Manager) took place briefly to update the server and app versions; everything is back to normal."
+  "12": "Planned server maintenance affecting all apps (Notflix, Homepage, Seerr, Dockge, CDN, phpMyAdmin, and Nginx Proxy Manager) took place briefly to update the server and app versions; everything is back to normal.",
+  "13": "The CDN was briefly unreachable after its Docker container stopped unexpectedly; the container was restarted and service was restored within about an hour.",
+  "18": "A compromised Cloudflare account led to an unauthorized redirect rule sending visitors to an external site, affecting all services for over a day; the malicious rule was removed and the account secured, though some services continued returning 403 errors afterward due to overly aggressive bot protection enabled during the investigation, which was then adjusted before the incident was fully resolved."
 }
