@@ -47,7 +47,7 @@ jobs:
           body=$(echo "$issue_json" | jq -r '.body // ""')
           comments=$(echo "$issue_json" | jq -r '[.comments[].body] | join("\n\n---\n\n")')
 
-          system_prompt='Summarize this resolved incident for a public status page in 1-2 short, plain-English sentences aimed at end users, not developers. State what happened and that it is now resolved. Plain text only, no markdown.'
+          system_prompt='Summarize this resolved incident for a public status page in 2-3 short, plain-English sentences aimed at end users, not developers. State what happened and how long it took before being resolved. Plain text only, no markdown.'
           user_prompt=$(jq -n --arg title "$title" --arg body "$body" --arg comments "$comments" \
             '"Title: \($title)\n\nDescription: \($body)\n\nUpdates:\n\($comments)"')
 
@@ -65,6 +65,11 @@ jobs:
             echo "$response"
             exit 1
           fi
+
+          # The model can get details wrong, so every stored summary carries
+          # this disclaimer as part of the text itself — visible wherever
+          # the summary is shown, with no separate front-end rendering needed.
+          summary="${summary} (Summarised by AI, details may not be accurate)"
 
           summaries_json=$(cat data/issue-summaries.json 2>/dev/null || echo '{}')
           echo "$summaries_json" | jq empty >/dev/null 2>&1 || summaries_json='{}'
