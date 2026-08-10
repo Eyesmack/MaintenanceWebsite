@@ -91,9 +91,10 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
 // summary table above where an all-"No downtime" month is worth showing.
 // Each month gets its own independent accordion (not one accordion
 // spanning every month) — reuses common.js's renderIssueAccordion, the
-// same per-issue markup/behavior (raw description + live comments) that
-// index.html's/app.html's Recent Updates used to show for everything.
-function renderIncidentMonths(recentIssues, months) {
+// same per-issue markup/behavior (AI summary + raw description + live
+// comments) that index.html's/app.html's Recent Updates used to show for
+// everything.
+function renderIncidentMonths(recentIssues, months, summariesByIssue) {
   const container = document.getElementById('incident-months');
 
   const byMonth = {};
@@ -118,7 +119,7 @@ function renderIncidentMonths(recentIssues, months) {
     const accordion = document.createElement('div');
     accordion.className = 'accordion incident-accordion';
     container.appendChild(accordion);
-    renderIssueAccordion(accordion, entries);
+    renderIssueAccordion(accordion, entries, summariesByIssue);
   }
 
   return hasAny;
@@ -221,8 +222,8 @@ async function init() {
   const apps = await loadApps();
   const appNames = Object.keys(apps);
   cachedAppNames = appNames;
-  const [{ recentIssues, downEventsByApp }, monitoringStartByApp] =
-    await Promise.all([fetchAppIssues(appNames), fetchMonitoringStartDates()]);
+  const [{ recentIssues, downEventsByApp }, monitoringStartByApp, issueSummaries] =
+    await Promise.all([fetchAppIssues(appNames), fetchMonitoringStartDates(), fetchIssueSummaries()]);
 
   const now = new Date();
   // Always the fixed global date, not per-app — this only needs to be the
@@ -233,7 +234,7 @@ async function init() {
 
   renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp);
   updateLiveIncidents(recentIssues);
-  const hasIncidents = renderIncidentMonths(recentIssues, months);
+  const hasIncidents = renderIncidentMonths(recentIssues, months, issueSummaries);
 
   const status = document.getElementById('history-status');
   status.textContent = hasIncidents ? '' : 'No incidents recorded yet.';

@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.21.6';
+const VERSION_NUMBER = 'v1.21.7';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -402,7 +402,7 @@ function fingerprintRecentIssues(recentIssues) {
 // months that already have ≥1 entry). Callers can invoke this multiple
 // times against different containers in the same page load (one per
 // month) — each call only touches its own `accordion` element.
-function renderIssueAccordion(accordion, issues) {
+function renderIssueAccordion(accordion, issues, summariesByIssue) {
   // Capture which items are currently expanded so the rebuild below (which
   // happens on every fingerprint change from the auto-refresh loop, not
   // just a manual count-selector change) doesn't snap them back closed —
@@ -480,6 +480,14 @@ function renderIssueAccordion(accordion, issues) {
     const collapseBody = document.createElement('div');
     collapseBody.className = 'accordion-body incident-body';
 
+    const summaryHeading = document.createElement('h6');
+    summaryHeading.className = 'small text-uppercase opacity-75 mb-1';
+    summaryHeading.textContent = 'Incident Summary';
+
+    const summaryText = document.createElement('p');
+    summaryText.className = 'mb-3';
+    summaryText.textContent = summariesByIssue[issue.number] || 'Summary pending…';
+
     const affectedApps = document.createElement('p');
     affectedApps.className = 'small opacity-75 mb-2';
     affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
@@ -504,7 +512,7 @@ function renderIssueAccordion(accordion, issues) {
     timestamp.className = 'small opacity-75 mb-0';
     timestamp.textContent = timestampText(issue, isUpdate);
 
-    collapseBody.append(affectedApps, description, timestamp);
+    collapseBody.append(summaryHeading, summaryText, affectedApps, description, timestamp);
     collapse.appendChild(collapseBody);
 
     if (expandedIssueNumbers.has(String(issue.number))) {
