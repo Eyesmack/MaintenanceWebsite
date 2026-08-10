@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.21.7';
+const VERSION_NUMBER = 'v1.21.8';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -480,6 +480,10 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
     const collapseBody = document.createElement('div');
     collapseBody.className = 'accordion-body incident-body';
 
+    const affectedApps = document.createElement('p');
+    affectedApps.className = 'small opacity-75 mb-2';
+    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+
     const summaryHeading = document.createElement('h6');
     summaryHeading.className = 'small text-uppercase opacity-75 mb-1';
     summaryHeading.textContent = 'Incident Summary';
@@ -488,9 +492,9 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
     summaryText.className = 'mb-3';
     summaryText.textContent = summariesByIssue[issue.number] || 'Summary pending…';
 
-    const affectedApps = document.createElement('p');
-    affectedApps.className = 'small opacity-75 mb-2';
-    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+    const initialPostHeading = document.createElement('h6');
+    initialPostHeading.className = 'small text-uppercase opacity-75 mb-1';
+    initialPostHeading.textContent = 'Initial Post';
 
     // A div, not a <p> — body_html can contain block-level content
     // (lists, code blocks, multiple paragraphs), which a <p> can't
@@ -512,7 +516,7 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
     timestamp.className = 'small opacity-75 mb-0';
     timestamp.textContent = timestampText(issue, isUpdate);
 
-    collapseBody.append(summaryHeading, summaryText, affectedApps, description, timestamp);
+    collapseBody.append(affectedApps, summaryHeading, summaryText, initialPostHeading, description, timestamp);
     collapse.appendChild(collapseBody);
 
     if (expandedIssueNumbers.has(String(issue.number))) {
