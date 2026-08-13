@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.23.0';
+const VERSION_NUMBER = 'v1.23.1';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -684,12 +684,26 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
     description.textContent = issue.body || 'No further details provided.';
   }
 
+  // A lightweight comment *count*, shown only where the real comments
+  // themselves aren't (index.html's teaser card, appendComments: false) —
+  // reuses `issue.comments`, a count GitHub's issues-list API already
+  // returns on every issue, so this needs no extra fetch. When
+  // appendComments is true, the real comment list below (see
+  // preloadIssueComments) already has its own "Updates:" heading, so this
+  // would just be redundant there.
+  let commentCount = null;
+  if (!appendComments && issue.comments > 0) {
+    commentCount = document.createElement('p');
+    commentCount.className = 'comment-box small d-inline-block px-2 py-1 mb-2 text';
+    commentCount.textContent = `${issue.comments} Update${issue.comments === 1 ? '' : 's'}`;
+  }
+
   const timestamp = document.createElement('p');
   timestamp.dataset.timestamp = '';
   timestamp.className = 'small opacity-75 mb-2 text';
   timestamp.textContent = timestampText(issue, isUpdate);
 
-  body.append(affectedApps, description, timestamp);
+  body.append(affectedApps, description, ...(commentCount ? [commentCount] : []), timestamp);
 
   const links = document.createElement('div');
   links.className = 'd-flex gap-3';
