@@ -47,7 +47,7 @@ jobs:
           body=$(echo "$issue_json" | jq -r '.body // ""')
           comments=$(echo "$issue_json" | jq -r '[.comments[].body] | join("\n\n---\n\n")')
 
-          system_prompt='Summarize this resolved incident for a public status page in 2-3 short, plain-English sentences aimed at end users, not developers. State what happened and how long it took before being resolved. Plain text only, no markdown.'
+          system_prompt='Summarize this resolved incident for a public status page in 2-3 short, plain-English sentences aimed at end users, not developers. State what happened and how long it took before being resolved. This is a single person'\''s personal server, not a company — if you need a first-person pronoun, use "I", never "we"/"our"/"us". Plain text only, no markdown.'
           user_prompt=$(jq -n --arg title "$title" --arg body "$body" --arg comments "$comments" \
             '"Title: \($title)\n\nDescription: \($body)\n\nUpdates:\n\($comments)"')
 
