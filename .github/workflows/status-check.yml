@@ -100,6 +100,17 @@ jobs:
           echo "$monitoring_json" | jq empty >/dev/null 2>&1 || monitoring_json='{}'
           monitoring_changed=false
 
+          # Pass 1: check every app's reachability and update fail-streak
+          # state, but only *decide* what to do about outages/recoveries
+          # here — the actual issue creation/closing happens in Pass 2
+          # below, once every app's result for this run is known. This is
+          # what lets multiple apps that go down together end up in one
+          # shared issue, and a combined issue's apps recover independently
+          # of each other, instead of each app being handled in isolation
+          # as it's checked.
+          recovered_json='[]'   # [{label, key, existing}] — apps back up this run with an open issue
+          newly_down_json='[]'  # [{label, key, url, status}] — apps that just crossed FAILURE_THRESHOLD
+
           while IFS=$'\t' read -r key url; do
             # Labels are always lowercase regardless of how apps.json
             # capitalizes the app name, so this stays in sync with the page's
@@ -135,9 +146,8 @@ jobs:
               state_json=$(echo "$state_json" | jq --arg k "$label" '.[$k] = 0')
 
               if [[ -n "$existing" ]]; then
-                gh_retry gh issue close "$existing" --repo "$GH_REPO" \
-                  --comment "Recovered — $key responded with HTTP $status at $(date -u +'%Y-%m-%d %H:%M UTC')."
-                echo "Closed issue #$existing for $key (recovered)"
+                recovered_json=$(echo "$recovered_json" | jq --arg l "$label" --arg k "$key" --argjson n "$existing" \
+                  '. + [{label: $l, key: $k, existing: $n}]')
               fi
             else
               if [[ -n "$existing" ]]; then
@@ -175,16 +185,94 @@ jobs:
                   if [[ "$in_window" == true ]]; then
                     echo "$key is down but within an announced maintenance window, skipping"
                   else
-                    gh_retry gh issue create --repo "$GH_REPO" \
-                      --title "$key is unreachable" \
-                      --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
-                      --label "$label" --label auto-outage
-                    echo "Opened new issue for $key"
+                    newly_down_json=$(echo "$newly_down_json" | jq --arg l "$label" --arg k "$key" --arg u "$url" --arg s "$status" \
+                      '. + [{label: $l, key: $k, url: $u, status: $s}]')
+                    echo "$key crossed the failure threshold — queued for this run's outage issue"
                   fi
                 fi
               fi
             fi
           done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' data/apps.json)
+
+          # Pass 2a: recoveries, grouped by the issue they belong to
+          # (several apps recovering this run can share the same combined
+          # issue). Labels are never removed — see the comment on
+          # newly_down_json's batching below for why: an app's downtime
+          # history/uptime% is computed from an issue's *current* labels
+          # every time the page fetches, so removing a label the moment
+          # that app individually recovers would silently drop the
+          # incident from its history. Instead, a recovered app's own end
+          # time is recorded as a declared body line (same convention as
+          # Maintenance-Start/End, Incident-Start), and the issue only
+          # actually closes once every attached app has recovered.
+          if [[ "$(echo "$recovered_json" | jq 'length')" -gt 0 ]]; then
+            now_nz=$(TZ='Pacific/Auckland' date +'%Y-%m-%d %H:%M')
+            now_str=$(date -u +'%Y-%m-%d %H:%M UTC')
+            for issue_number in $(echo "$recovered_json" | jq -r '[.[].existing] | unique | .[]'); do
+              recovered_for_issue=$(echo "$recovered_json" | jq --argjson n "$issue_number" '[.[] | select(.existing == $n)]')
+              recovered_keys=$(echo "$recovered_for_issue" | jq -r '[.[].key] | join(", ")')
+              recovered_labels_json=$(echo "$recovered_for_issue" | jq '[.[].label]')
+
+              current_labels=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json labels --jq '[.labels[].name | ascii_downcase]')
+              remaining_labels=$(jq -n --argjson current "$current_labels" --argjson recovered "$recovered_labels_json" \
+                '($current - ["auto-outage"]) - $recovered')
+
+              if [[ "$(echo "$remaining_labels" | jq 'length')" -eq 0 ]]; then
+                # Every app attached to this issue has now recovered.
+                # Apps recovering in this final batch don't need their own
+                # Recovered-<label> marker — closed_at already correctly
+                # represents their end time too. Any app that recovered in
+                # an earlier partial batch already has its own marker from
+                # back then, untouched here.
+                gh_retry gh issue close "$issue_number" --repo "$GH_REPO" \
+                  --comment "Recovered — $recovered_keys responded normally at $now_str."
+                echo "Closed issue #$issue_number ($recovered_keys recovered)"
+              else
+                current_body=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json body --jq '(.body // "")')
+                recovery_lines=$(echo "$recovered_for_issue" | jq -r --arg t "$now_nz" '.[] | "Recovered-\(.label): \($t)"')
+                new_body=$(printf '%s\n\n%s' "$current_body" "$recovery_lines")
+
+                gh_retry gh issue edit "$issue_number" --repo "$GH_REPO" --body "$new_body"
+                gh_retry gh issue comment "$issue_number" --repo "$GH_REPO" \
+                  --body "✅ $recovered_keys recovered at $now_str. Still monitoring the rest."
+                echo "Recorded recovery for $recovered_keys on issue #$issue_number (others still down)"
+              fi
+            done
+          fi
+
+          # Pass 2b: apps that crossed the failure threshold this run,
+          # batched into a single issue when more than one went down
+          # together — one label list on one issue rather than a flood of
+          # simultaneous separate issues for what's usually one shared
+          # root cause (the server itself, DNS, Cloudflare, etc). A lone
+          # newly-down app still gets exactly the same single-app issue
+          # shape as before.
+          newly_down_count=$(echo "$newly_down_json" | jq 'length')
+          if [[ "$newly_down_count" -eq 1 ]]; then
+            key=$(echo "$newly_down_json" | jq -r '.[0].key')
+            url=$(echo "$newly_down_json" | jq -r '.[0].url')
+            status=$(echo "$newly_down_json" | jq -r '.[0].status')
+            label=$(echo "$newly_down_json" | jq -r '.[0].label')
+            gh_retry gh issue create --repo "$GH_REPO" \
+              --title "$key is unreachable" \
+              --body "Automated check could not reach $url (HTTP $status) as of $(date -u +'%Y-%m-%d %H:%M UTC')." \
+              --label "$label" --label auto-outage
+            echo "Opened new issue for $key"
+          elif [[ "$newly_down_count" -gt 1 ]]; then
+            keys=$(echo "$newly_down_json" | jq -r '[.[].key] | join(", ")')
+            now_str=$(date -u +'%Y-%m-%d %H:%M UTC')
+            body=$(echo "$newly_down_json" | jq -r --arg now "$now_str" \
+              '["Automated checks could not reach the following apps as of \($now):", ""] + [.[] | "- \(.key): \(.url) (HTTP \(.status))"] | join("\n")')
+
+            label_flags=(--label auto-outage)
+            while IFS= read -r l; do label_flags+=(--label "$l"); done < <(echo "$newly_down_json" | jq -r '.[].label')
+
+            gh_retry gh issue create --repo "$GH_REPO" \
+              --title "$keys are unreachable" \
+              --body "$body" \
+              "${label_flags[@]}"
+            echo "Opened new combined issue for: $keys"
+          fi
 
           # Commit monitoring-start.json only when a genuinely new app was
           # seen this run — independent of the latency block below (both

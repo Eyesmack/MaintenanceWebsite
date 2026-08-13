@@ -71,8 +71,8 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
       // already past that app's own start.
       const monitoringStart = getMonitoringStart(app, monitoringStartByApp);
       const monitoredStart = new Date(Math.max(monthStart.getTime(), monitoringStart.getTime()));
-      const downtimeMs = getDowntimeMs(issues, monitoredStart, monthEnd);
-      const percent = calculateUptimePercent(issues, monitoredStart, monthEnd);
+      const downtimeMs = getDowntimeMs(issues, monitoredStart, monthEnd, app);
+      const percent = calculateUptimePercent(issues, monitoredStart, monthEnd, app);
       const cell = document.createElement('td');
       cell.textContent = downtimeMs > 0
         ? `${formatDuration(downtimeMs)} (${percent.toFixed(2)}%)`

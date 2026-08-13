@@ -115,7 +115,7 @@ function getRollingWindow(windowMs, now) {
 // 90-day history strip directly below it in the same box.
 function renderAppUptimePercent(issues) {
   const [windowStart, windowEnd] = getRollingWindow(APP_UPTIME_HISTORY_DAYS * 24 * 60 * 60 * 1000, new Date());
-  const percent = calculateUptimePercent(issues, windowStart, windowEnd);
+  const percent = calculateUptimePercent(issues, windowStart, windowEnd, targetApp);
   document.getElementById('app-uptime-percent').textContent = `${percent.toFixed(2)}% uptime`;
 }
 
@@ -124,7 +124,7 @@ function renderAppUptimePercent(issues) {
 // of 30, targeting this page's single #app-uptime-history container.
 function renderAppUptimeHistory(issues) {
   const container = document.getElementById('app-uptime-history');
-  renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, getMonitoringStart(targetApp, cachedMonitoringStartByApp), new Date());
+  renderUptimeStrip(container, issues, APP_UPTIME_HISTORY_DAYS, getMonitoringStart(targetApp, cachedMonitoringStartByApp), new Date(), targetApp);
 }
 
 // Overall Uptime's 4 independent stat columns, each its own clamped
@@ -133,7 +133,7 @@ function renderOverallUptime(issues) {
   const now = new Date();
   for (const { id, ms } of OVERALL_UPTIME_WINDOWS) {
     const [windowStart, windowEnd] = getRollingWindow(ms, now);
-    const percent = calculateUptimePercent(issues, windowStart, windowEnd);
+    const percent = calculateUptimePercent(issues, windowStart, windowEnd, targetApp);
     document.getElementById(id).textContent = `${percent.toFixed(2)}%`;
   }
 }

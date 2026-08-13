@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.22.0';
+const VERSION_NUMBER = 'v1.23.0';
 
 // App-to-URL mapping lives in apps.json, shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth.
@@ -104,9 +104,14 @@ function parseZonedDateTime(naiveStr, timeZone) {
 }
 
 // Parses one "<Label>: YYYY-MM-DD HH:MM" line (NZ time) out of an issue
-// body. Returns null if that line isn't present/parseable.
+// body. Returns null if that line isn't present/parseable. `label` is
+// escaped before building the RegExp — a no-op for the fixed-string labels
+// below, but this is also called with a dynamic per-app label
+// (`Recovered-<app>`, see resolveIssueInterval), and app names are
+// user-editable via apps.json.
 function extractDeclaredTimestamp(body, label) {
-  const match = (body || '').match(new RegExp(`${label}:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = (body || '').match(new RegExp(`${escapedLabel}:\\s(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})`));
   return match ? parseZonedDateTime(match[1], 'Pacific/Auckland') : null;
 }
 
@@ -181,6 +186,16 @@ async function fetchAppIssues(appNames) {
 
       if (issue.state === 'open') {
         for (const appName of matchedApps) {
+          // An app can individually recover while a shared incident issue
+          // stays open for other still-down apps (see status-check.yml's
+          // Recovered-<label> body marker, and resolveIssueInterval's
+          // comment) — such an app is no longer live-down even though the
+          // issue and its label remain attached (permanently, so
+          // downEventsByApp above still correctly attributes the
+          // historical downtime to it).
+          const recovered = extractDeclaredTimestamp(issue.body, `Recovered-${appName.toLowerCase()}`);
+          if (recovered) continue;
+
           (issuesByApp[appName] ||= []).push(issue);
           if (labels.includes('auto-outage')) {
             hasOpenAutoOutage[appName] = true;
@@ -224,28 +239,38 @@ function formatDuration(ms) {
 // the declared Maintenance-Start/End window, not when the heads-up notice
 // happened to be created. A real incident works differently: only the
 // start can be backdated (Incident-Start, if given — otherwise falls back
-// to created_at); the end is always closed_at/windowEnd regardless, never
-// a second declared value, since there's no Incident-End.
-function resolveIssueInterval(issue, windowEnd) {
+// to created_at); the end is always closed_at/windowEnd, UNLESS `appLabel`
+// is given and status-check.yml has recorded that specific app's own
+// earlier recovery (a `Recovered-<label>` body line — see status-check.yml
+// for why: a combined multi-app issue can have some of its apps recover
+// before others, and each app's own downtime needs to stop counting at
+// its own recovery time, not whenever the last app finally closes the
+// whole issue). `appLabel` is optional and omitted by every caller that
+// just wants the overall issue interval (card/accordion rendering) —
+// existing behavior there is untouched.
+function resolveIssueInterval(issue, windowEnd, appLabel) {
   const maintenanceWindow = extractMaintenanceWindow(issue.body);
   if (maintenanceWindow) return [maintenanceWindow.start, maintenanceWindow.end];
 
   const incidentStart = extractIncidentStart(issue.body);
   const start = incidentStart || new Date(issue.created_at);
-  const end = issue.closed_at ? new Date(issue.closed_at) : windowEnd;
+
+  const recoveredAt = appLabel && extractDeclaredTimestamp(issue.body, `Recovered-${appLabel.toLowerCase()}`);
+  const end = recoveredAt || (issue.closed_at ? new Date(issue.closed_at) : windowEnd);
   return [start, end];
 }
 
 // Clips each issue's interval to [windowStart, windowEnd] and merges
 // overlaps (so overlapping issues never get double-counted), returning
-// the total downtime in that window, in milliseconds.
-function getDowntimeMs(issues, windowStart, windowEnd) {
+// the total downtime in that window, in milliseconds. `appLabel` (optional)
+// is threaded through to resolveIssueInterval — see its comment.
+function getDowntimeMs(issues, windowStart, windowEnd, appLabel) {
   const windowMs = windowEnd - windowStart;
   if (windowMs <= 0) return 0;
 
   const intervals = issues
     .map((issue) => {
-      const [start, end] = resolveIssueInterval(issue, windowEnd);
+      const [start, end] = resolveIssueInterval(issue, windowEnd, appLabel);
       return [Math.max(start, windowStart), Math.min(end, windowEnd)];
     })
     .filter(([start, end]) => end > start)
@@ -264,10 +289,10 @@ function getDowntimeMs(issues, windowStart, windowEnd) {
   return merged.reduce((sum, [start, end]) => sum + (end - start), 0);
 }
 
-function calculateUptimePercent(issues, windowStart, windowEnd) {
+function calculateUptimePercent(issues, windowStart, windowEnd, appLabel) {
   const windowMs = windowEnd - windowStart;
   if (windowMs <= 0) return 100;
-  const uptimeMs = Math.max(0, windowMs - getDowntimeMs(issues, windowStart, windowEnd));
+  const uptimeMs = Math.max(0, windowMs - getDowntimeMs(issues, windowStart, windowEnd, appLabel));
   return Math.min(100, (uptimeMs / windowMs) * 100);
 }
 
@@ -696,7 +721,9 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
 // history (30 days) and app.js's single-app history (90 days) — same
 // convention as most status pages (Upptime, UptimeRobot, Cachet). Reuses
 // calculateUptimePercent per day rather than duplicating the downtime math.
-function renderUptimeStrip(container, issues, days, monitoringStart, now) {
+// `appLabel` (optional) is threaded through to calculateUptimePercent — see
+// resolveIssueInterval's comment for why a per-app label matters here.
+function renderUptimeStrip(container, issues, days, monitoringStart, now, appLabel) {
   container.innerHTML = '';
   for (let i = days - 1; i >= 0; i--) {
     const dayStart = new Date();
@@ -716,7 +743,7 @@ function renderUptimeStrip(container, issues, days, monitoringStart, now) {
       day.classList.add('bg-secondary');
       day.title = `${dayStart.toLocaleDateString()} — No data (before monitoring began)`;
     } else {
-      const percent = calculateUptimePercent(issues, dayStart, dayEnd);
+      const percent = calculateUptimePercent(issues, dayStart, dayEnd, appLabel);
       day.classList.add(percent === 100 ? 'bg-success' : 'bg-danger');
       day.title = `${dayStart.toLocaleDateString()} — ${percent.toFixed(2)}% uptime`;
     }

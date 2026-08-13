@@ -294,7 +294,7 @@ function renderUptime(app) {
   const timeframeKey = select.value;
   const { label } = UPTIME_TIMEFRAMES[timeframeKey];
   const [windowStart, windowEnd] = getUptimeWindow(timeframeKey, new Date(), app);
-  const percent = calculateUptimePercent(cachedDownEventsByApp[app] || [], windowStart, windowEnd);
+  const percent = calculateUptimePercent(cachedDownEventsByApp[app] || [], windowStart, windowEnd, app);
   text.textContent = `${percent.toFixed(2)}% uptime (${label})`;
 }
 
@@ -311,7 +311,7 @@ function initUptimeTimeframeSelector() {
 function renderUptimeHistory(app) {
   const container = document.querySelector(`#status-cards [data-app="${app}"] [data-uptime-history]`);
   if (!container) return;
-  renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, getMonitoringStart(app, cachedMonitoringStartByApp), new Date());
+  renderUptimeStrip(container, cachedDownEventsByApp[app] || [], UPTIME_HISTORY_DAYS, getMonitoringStart(app, cachedMonitoringStartByApp), new Date(), app);
 }
 
 // A line chart (common.js's renderLatencyChart) scaled to whatever's
