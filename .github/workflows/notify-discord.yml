@@ -1,0 +1,63 @@
+name: Notify Discord
+
+on:
+  issues:
+    types: [opened, closed]
+
+permissions:
+  issues: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Notify Discord
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          set -uo pipefail
+
+          # Same app-label matching convention as summarize-incident.yml —
+          # skips the internal status-check-state bookkeeping issue and
+          # anything unrelated to apps.json automatically.
+          app_labels=$(jq -r 'keys[] | ascii_downcase' data/apps.json)
+          issue_json=$(gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json title,url,labels)
+          issue_labels=$(echo "$issue_json" | jq -r '.labels[].name | ascii_downcase')
+
+          matched=false
+          while IFS= read -r label; do
+            [[ -n "$label" ]] && grep -qxF "$label" <<< "$app_labels" && matched=true && break
+          done <<< "$issue_labels"
+
+          if [[ "$matched" != true ]]; then
+            echo "Issue #$ISSUE_NUMBER has no app label, skipping"
+            exit 0
+          fi
+
+          is_update=false
+          grep -qxF "update" <<< "$issue_labels" && is_update=true
+
+          if [[ "$ACTION" == "opened" ]]; then
+            if [[ "$is_update" == true ]]; then
+              emoji="🔧"; verb="Planned maintenance scheduled"
+            else
+              emoji="🔴"; verb="Incident opened"
+            fi
+          else
+            emoji="✅"; verb="Resolved"
+          fi
+
+          title=$(echo "$issue_json" | jq -r '.title')
+          url=$(echo "$issue_json" | jq -r '.url')
+
+          content=$(jq -n --arg e "$emoji" --arg v "$verb" --arg t "$title" --arg u "$url" \
+            '"\($e) **\($v)**: \($t)\n\($u)"')
+          body=$(jq -n --argjson content "$content" '{content: $content}')
+
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" -H "Content-Type: application/json" -d "$body"
