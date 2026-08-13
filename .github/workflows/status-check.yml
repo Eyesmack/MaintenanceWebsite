@@ -146,8 +146,18 @@ jobs:
               state_json=$(echo "$state_json" | jq --arg k "$label" '.[$k] = 0')
 
               if [[ -n "$existing" ]]; then
-                recovered_json=$(echo "$recovered_json" | jq --arg l "$label" --arg k "$key" --argjson n "$existing" \
-                  '. + [{label: $l, key: $k, existing: $n}]')
+                # A recovered app's label is never removed (see Pass 2a),
+                # so it's still attached to $existing on every later run
+                # too — without this check, an already-recorded recovery
+                # would get re-queued and re-commented on every run for as
+                # long as any other app in the same issue stays down.
+                existing_body=$(gh_retry gh issue view "$existing" --repo "$GH_REPO" --json body --jq '(.body // "")')
+                if printf '%s' "$existing_body" | grep -qF "Recovered-${label}:"; then
+                  echo "$key already recorded as recovered on issue #$existing, skipping"
+                else
+                  recovered_json=$(echo "$recovered_json" | jq --arg l "$label" --arg k "$key" --argjson n "$existing" \
+                    '. + [{label: $l, key: $k, existing: $n}]')
+                fi
               fi
             else
               if [[ -n "$existing" ]]; then
@@ -213,22 +223,40 @@ jobs:
               recovered_keys=$(echo "$recovered_for_issue" | jq -r '[.[].key] | join(", ")')
               recovered_labels_json=$(echo "$recovered_for_issue" | jq '[.[].label]')
 
-              current_labels=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json labels --jq '[.labels[].name | ascii_downcase]')
-              remaining_labels=$(jq -n --argjson current "$current_labels" --argjson recovered "$recovered_labels_json" \
-                '($current - ["auto-outage"]) - $recovered')
+              current_issue=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json labels,body --jq \
+                '{labels: [.labels[].name | ascii_downcase], body: (.body // "")}')
+              current_labels=$(echo "$current_issue" | jq '.labels')
+              current_body=$(echo "$current_issue" | jq -r '.body')
 
-              if [[ "$(echo "$remaining_labels" | jq 'length')" -eq 0 ]]; then
-                # Every app attached to this issue has now recovered.
-                # Apps recovering in this final batch don't need their own
-                # Recovered-<label> marker — closed_at already correctly
-                # represents their end time too. Any app that recovered in
-                # an earlier partial batch already has its own marker from
-                # back then, untouched here.
+              # A label only really means "still down" if it's neither
+              # recovering in this run's batch NOR already recorded as
+              # recovered on an earlier partial-recovery round (its own
+              # Recovered-<label> marker) — labels themselves are
+              # permanent (see the comment above Pass 2a), so diffing out
+              # only this run's recovered labels isn't enough once more
+              # than one recovery round has happened on the same issue.
+              still_down_labels='[]'
+              while IFS= read -r candidate_label; do
+                [[ -z "$candidate_label" ]] && continue
+                if [[ "$(echo "$recovered_labels_json" | jq --arg l "$candidate_label" 'any(. == $l)')" == "true" ]]; then
+                  continue
+                fi
+                if printf '%s' "$current_body" | grep -qF "Recovered-${candidate_label}:"; then
+                  continue
+                fi
+                still_down_labels=$(echo "$still_down_labels" | jq --arg l "$candidate_label" '. + [$l]')
+              done < <(echo "$current_labels" | jq -r '.[] | select(. != "auto-outage")')
+
+              if [[ "$(echo "$still_down_labels" | jq 'length')" -eq 0 ]]; then
+                # Every app attached to this issue has now recovered — some
+                # possibly in an earlier partial-recovery round (already
+                # have their own marker from back then), the rest in this
+                # run's batch (don't need one — closed_at already
+                # correctly represents their end time too).
                 gh_retry gh issue close "$issue_number" --repo "$GH_REPO" \
                   --comment "Recovered — $recovered_keys responded normally at $now_str."
                 echo "Closed issue #$issue_number ($recovered_keys recovered)"
               else
-                current_body=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json body --jq '(.body // "")')
                 recovery_lines=$(echo "$recovered_for_issue" | jq -r --arg t "$now_nz" '.[] | "Recovered-\(.label): \($t)"')
                 new_body=$(printf '%s\n\n%s' "$current_body" "$recovery_lines")
 
