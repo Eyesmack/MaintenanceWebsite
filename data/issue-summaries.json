@@ -8,5 +8,6 @@
   "33": "My server was unreachable for about 1 minute. The homepage and content delivery network (CDN) were down, but they're now working normally again. (Summarised by AI, details may not be accurate)",
   "35": "My homepage was temporarily unavailable due to a connection issue, and I was able to restore it within about 1 minute. (Summarised by AI, details may not be accurate)",
   "34": "I experienced a brief issue with my website's homepage, making it unreachable for about 2 minutes. The problem has been resolved, and the site is now accessible again. (Summarised by AI, details may not be accurate)",
-  "32": "My server experienced issues from August 26 at 5:47 PM UTC, making my homepage, CDN, and Notflix unavailable. The problems were resolved by August 26 at 5:50 PM UTC, with my homepage being the first to recover, followed by my CDN and Notflix shortly after. (Summarised by AI, details may not be accurate)"
+  "32": "My server experienced issues from August 26 at 5:47 PM UTC, making my homepage, CDN, and Notflix unavailable. The problems were resolved by August 26 at 5:50 PM UTC, with my homepage being the first to recover, followed by my CDN and Notflix shortly after. (Summarised by AI, details may not be accurate)",
+  "31": "My server experienced issues starting at 17:46 UTC on August 26, causing several websites to be unreachable. I was able to resolve the issues with Dockge and Seerr by 05:47 UTC on August 27, and with the rest of the sites by 17:51 UTC on August 26. (Summarised by AI, details may not be accurate)"
 }
