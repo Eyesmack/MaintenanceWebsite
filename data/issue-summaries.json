@@ -6,5 +6,6 @@
   "28": "A configuration error in the server's compose file took Notflix and Seerr offline. I restored Notflix quickly with a temporary fix, but Seerr needed a bit more troubleshooting before I could get it running again; both apps were fully back within about 30 minutes. (Summarised by AI, details may not be accurate)",
   "29": "My blog was temporarily unavailable due to a connectivity issue, and I'm happy to report that it's now back online. The problem lasted for about 16 minutes. (Summarised by AI, details may not be accurate)",
   "33": "My server was unreachable for about 1 minute. The homepage and content delivery network (CDN) were down, but they're now working normally again. (Summarised by AI, details may not be accurate)",
-  "35": "My homepage was temporarily unavailable due to a connection issue, and I was able to restore it within about 1 minute. (Summarised by AI, details may not be accurate)"
+  "35": "My homepage was temporarily unavailable due to a connection issue, and I was able to restore it within about 1 minute. (Summarised by AI, details may not be accurate)",
+  "34": "I experienced a brief issue with my website's homepage, making it unreachable for about 2 minutes. The problem has been resolved, and the site is now accessible again. (Summarised by AI, details may not be accurate)"
 }
