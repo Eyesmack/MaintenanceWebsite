@@ -14,5 +14,6 @@
   "36": "My server experienced an issue with storage, causing my homepage, blog, and phpMyAdmin to be unreachable from 04:02 UTC to 04:06 UTC. I restarted the server to resolve the problem and everything is now working normally. The outage lasted approximately 4 minutes. (Summarised by AI, details may not be accurate)",
   "37": "My website's homepage, blog, and CDN were not accessible for a brief period starting at 12:50 UTC on September 8, 2026. The issue was resolved at the same time it was detected. (Summarised by AI, details may not be accurate)",
   "38": "My homepage was temporarily unavailable due to an unknown issue. It was back up and working normally about 1 minute later, by 12:51 UTC. (Summarised by AI, details may not be accurate)",
-  "40": "My blog was temporarily unreachable due to a connection issue. I'm happy to report that it's now back online. The issue was resolved in about 3 minutes. (Summarised by AI, details may not be accurate)"
+  "40": "My blog was temporarily unreachable due to a connection issue. I'm happy to report that it's now back online. The issue was resolved in about 3 minutes. (Summarised by AI, details may not be accurate)",
+  "44": "My content delivery network (CDN) was temporarily unreachable, but it's now working normally. The issue lasted for less than an hour, starting at 10:57 UTC on September 20, 2026. Service was restored at the same time. (Summarised by AI, details may not be accurate)"
 }
