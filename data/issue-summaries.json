@@ -44,5 +44,6 @@
   "67": "I experienced an issue with my server that made several websites and services unreachable, including my homepage, blog, and other sites. The problem lasted from October 5, 2026, 1:02 PM UTC until it was resolved on October 5, 2026, 11:53 PM UTC, with phpMyAdmin and Nginx Proxy Manager being restored at 11:48 PM UTC. (Summarised by AI, details may not be accurate)",
   "73": "My homepage was temporarily unreachable for about a minute. I apologize for the inconvenience and am glad to report that it's now working normally. (Summarised by AI, details may not be accurate)",
   "72": "My website's homepage, blog, and CDN were unreachable from October 14, 2026, at 12:10 UTC, due to an unknown issue. The blog and CDN became available again about an hour later, at 1:11 UTC. The homepage was restored about 2 minutes after that, at 12:12 UTC. (Summarised by AI, details may not be accurate)",
-  "74": "My server was temporarily unavailable due to a loss of connection. It took about 2 minutes to resolve the issue. My server is now back up and running normally. (Summarised by AI, details may not be accurate)"
+  "74": "My server was temporarily unavailable due to a loss of connection. It took about 2 minutes to resolve the issue. My server is now back up and running normally. (Summarised by AI, details may not be accurate)",
+  "75": "My server was temporarily unreachable due to a brief connection issue. It was back online about a minute later. (Summarised by AI, details may not be accurate)"
 }
