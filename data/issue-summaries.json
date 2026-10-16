@@ -48,5 +48,6 @@
   "75": "My server was temporarily unreachable due to a brief connection issue. It was back online about a minute later. (Summarised by AI, details may not be accurate)",
   "76": "I experienced an issue with my website's homepage, making it unreachable for about 3 minutes starting from 1:07 AM UTC on October 16, 2026. The problem was resolved at 1:10 AM UTC. (Summarised by AI, details may not be accurate)",
   "77": "Seerr was temporarily unavailable due to an unknown issue, but it's now working again. The problem lasted for about 3 minutes. I apologize for any inconvenience this may have caused. (Summarised by AI, details may not be accurate)",
-  "78": "My server experienced a brief issue that made my CDN and Seerr apps unreachable starting around 6:04 AM UTC on October 16, 2026. I was able to resolve the issue just one minute later, at 6:05 AM UTC. Everything is now working normally. (Summarised by AI, details may not be accurate)"
+  "78": "My server experienced a brief issue that made my CDN and Seerr apps unreachable starting around 6:04 AM UTC on October 16, 2026. I was able to resolve the issue just one minute later, at 6:05 AM UTC. Everything is now working normally. (Summarised by AI, details may not be accurate)",
+  "79": "Seerr and Nginx Proxy Manager were temporarily unreachable starting at 06:05 UTC on October 16, 2026. The issue lasted for about 1 minute before being resolved at 06:06 UTC. Service is now available again. (Summarised by AI, details may not be accurate)"
 }
