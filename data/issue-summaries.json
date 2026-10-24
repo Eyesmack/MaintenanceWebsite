@@ -118,5 +118,6 @@
   "172": "My website was temporarily unavailable, but it's now back up and working normally. The issue lasted for about 7 minutes, from 9:35 to 9:42 UTC on October 24, 2026. (Summarised by AI, details may not be accurate)",
   "173": "My homepage and blog were not accessible as of 9:35 UTC on October 24, 2026. The issue was resolved with the blog being restored at 9:41 UTC and the homepage at 9:44 UTC. The total downtime lasted about 10 hours. (Summarised by AI, details may not be accurate)",
   "174": "My server was temporarily unreachable, but it's now working again. The issue lasted for about 1 minute before being resolved. (Summarised by AI, details may not be accurate)",
-  "175": "My blog was temporarily unreachable due to a technical issue. I was able to resolve the problem and it's now working again. The downtime lasted about 1 minute. (Summarised by AI, details may not be accurate)"
+  "175": "My blog was temporarily unreachable due to a technical issue. I was able to resolve the problem and it's now working again. The downtime lasted about 1 minute. (Summarised by AI, details may not be accurate)",
+  "176": "I experienced an issue with phpMyAdmin, making it temporarily unavailable. The problem started at 10:27 UTC on October 24, 2026, and was resolved just one minute later. (Summarised by AI, details may not be accurate)"
 }
