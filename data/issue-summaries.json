@@ -233,5 +233,6 @@
   "298": "My blog was temporarily unavailable due to a connectivity issue, and I was able to resolve it within about 5 minutes. (Summarised by AI, details may not be accurate)",
   "300": "My website was temporarily unreachable due to a technical issue. I was able to resolve the problem within 2 minutes. The homepage is now available again. (Summarised by AI, details may not be accurate)",
   "297": "My blog and phpMyAdmin were unreachable starting around 8:37 PM UTC on October 24, 2026. phpMyAdmin became available again about 12 hours later, at 9:38 AM UTC on October 25, and my blog was back up about 6 minutes after that. (Summarised by AI, details may not be accurate)",
-  "301": "I experienced a brief outage with my website, making it unreachable, starting around 8:44 PM UTC on October 24, 2026. The issue was resolved about 4 minutes later, at 8:48 PM UTC. (Summarised by AI, details may not be accurate)"
+  "301": "I experienced a brief outage with my website, making it unreachable, starting around 8:44 PM UTC on October 24, 2026. The issue was resolved about 4 minutes later, at 8:48 PM UTC. (Summarised by AI, details may not be accurate)",
+  "302": "My blog was temporarily unreachable due to an unknown issue, and automated checks couldn't access it. The problem was resolved about 1 minute after it was first detected. My blog is now accessible again. (Summarised by AI, details may not be accurate)"
 }
