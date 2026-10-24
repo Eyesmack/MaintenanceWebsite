@@ -241,5 +241,6 @@
   "306": "My blog was temporarily unreachable due to a technical issue, and I was able to resolve it about 2 minutes after it was first reported. The blog is now working normally. (Summarised by AI, details may not be accurate)",
   "308": "My blog was temporarily unreachable due to a technical issue, starting around 9:26 PM UTC on October 24, 2026. The problem lasted for about 2 minutes before being resolved. The blog is now working normally. (Summarised by AI, details may not be accurate)",
   "309": "I experienced an issue with phpMyAdmin that made it unreachable for a very short time, starting around 21:28 UTC on October 24, 2026. The problem was resolved at the same time. (Summarised by AI, details may not be accurate)",
-  "307": "My homepage was temporarily unreachable due to an unknown issue, starting at 21:24 UTC on October 24, 2026. The problem lasted for about 6 minutes. Service has been restored. (Summarised by AI, details may not be accurate)"
+  "307": "My homepage was temporarily unreachable due to an unknown issue, starting at 21:24 UTC on October 24, 2026. The problem lasted for about 6 minutes. Service has been restored. (Summarised by AI, details may not be accurate)",
+  "310": "I experienced an issue with phpMyAdmin that made it unreachable for about 2 minutes. I'm pleased to say it's now working normally again. The problem started at 21:30 UTC and was resolved by 21:32 UTC. (Summarised by AI, details may not be accurate)"
 }
