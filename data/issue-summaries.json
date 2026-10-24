@@ -235,5 +235,6 @@
   "297": "My blog and phpMyAdmin were unreachable starting around 8:37 PM UTC on October 24, 2026. phpMyAdmin became available again about 12 hours later, at 9:38 AM UTC on October 25, and my blog was back up about 6 minutes after that. (Summarised by AI, details may not be accurate)",
   "301": "I experienced a brief outage with my website, making it unreachable, starting around 8:44 PM UTC on October 24, 2026. The issue was resolved about 4 minutes later, at 8:48 PM UTC. (Summarised by AI, details may not be accurate)",
   "302": "My blog was temporarily unreachable due to an unknown issue, and automated checks couldn't access it. The problem was resolved about 1 minute after it was first detected. My blog is now accessible again. (Summarised by AI, details may not be accurate)",
-  "303": "I experienced a brief outage on my website, making it unreachable from 9:09 PM to 9:12 PM UTC on October 24, 2026. The issue was resolved within 3 minutes. My homepage is now working normally. (Summarised by AI, details may not be accurate)"
+  "303": "I experienced a brief outage on my website, making it unreachable from 9:09 PM to 9:12 PM UTC on October 24, 2026. The issue was resolved within 3 minutes. My homepage is now working normally. (Summarised by AI, details may not be accurate)",
+  "304": "My website was temporarily unavailable due to a connection issue. It was restored to normal functioning within 2 minutes. (Summarised by AI, details may not be accurate)"
 }
