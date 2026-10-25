@@ -264,5 +264,6 @@
   "332": "My homepage and blog were unreachable for about 13 hours starting at 12:38 AM on October 25, 2026. The issue was resolved by 12:40 AM on October 25, 2026. (Summarised by AI, details may not be accurate)",
   "333": "My website and phpMyAdmin were unreachable starting at 00:46 UTC on October 25, 2026. I was able to restore phpMyAdmin by 13:47 UTC, and the website was back up by 00:48 UTC, just a couple of minutes after the issue started. (Summarised by AI, details may not be accurate)",
   "334": "My website was temporarily unreachable due to a technical issue, causing users to see an error message. The problem was resolved in just 3 minutes. My homepage is now working normally again. (Summarised by AI, details may not be accurate)",
-  "335": "My blog was temporarily unavailable due to a technical issue. I was able to resolve the problem and it's now accessible again. The downtime lasted about 5 minutes. (Summarised by AI, details may not be accurate)"
+  "335": "My blog was temporarily unavailable due to a technical issue. I was able to resolve the problem and it's now accessible again. The downtime lasted about 5 minutes. (Summarised by AI, details may not be accurate)",
+  "337": "My blog was temporarily unreachable due to a technical issue, causing users to receive an error message. The problem lasted for about 1 minute, from 1:00 AM to 1:01 AM UTC on October 25, 2026. It has since been resolved and the blog is available again. (Summarised by AI, details may not be accurate)"
 }
