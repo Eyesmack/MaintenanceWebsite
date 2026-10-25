@@ -336,5 +336,6 @@
   "419": "I experienced an issue with my phpMyAdmin service, which made it temporarily unreachable from 05:53 UTC to 05:55 UTC on October 25, 2026. The service is now working normally. The issue was resolved in just 2 minutes. (Summarised by AI, details may not be accurate)",
   "422": "phpMyAdmin was temporarily unavailable due to a network issue, but it's now working normally. The problem lasted for about 1 minute. Service has been restored. (Summarised by AI, details may not be accurate)",
   "421": "My homepage and blog were unreachable from 05:58 UTC on October 25, 2026, until 06:05 UTC, when they became available again. The issue was resolved in about an hour. (Summarised by AI, details may not be accurate)",
-  "423": "My server was temporarily unreachable from 06:05 UTC to 06:08 UTC on October 25, 2026. During this time, visitors may have seen a \"connection timed out\" error. The issue was resolved after 3 minutes. (Summarised by AI, details may not be accurate)"
+  "423": "My server was temporarily unreachable from 06:05 UTC to 06:08 UTC on October 25, 2026. During this time, visitors may have seen a \"connection timed out\" error. The issue was resolved after 3 minutes. (Summarised by AI, details may not be accurate)",
+  "420": "My homepage and blog were unreachable starting at 05:58 UTC on October 25, 2026, due to an unknown issue. I was able to recover my blog at 06:08 UTC, and both my homepage and blog were fully restored by 06:08 UTC. The total outage lasted about 12 hours. (Summarised by AI, details may not be accurate)"
 }
