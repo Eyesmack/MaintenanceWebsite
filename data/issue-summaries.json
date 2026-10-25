@@ -328,5 +328,6 @@
   "410": "phpMyAdmin was temporarily unavailable due to a connection issue, but it's now working normally. The problem lasted for about 1 minute before being resolved. (Summarised by AI, details may not be accurate)",
   "411": "phpMyAdmin was temporarily unavailable for about 0 minutes. It became unreachable at 05:28 UTC and was restored at 05:28 UTC. I've now fixed the issue and phpMyAdmin is working normally again. (Summarised by AI, details may not be accurate)",
   "412": "My website was temporarily unavailable due to an unknown issue, and automated checks couldn't reach it. The problem was fixed within 3 minutes, and my homepage is now accessible again. (Summarised by AI, details may not be accurate)",
-  "414": "My personal blog and Seerr website were temporarily unreachable due to an unknown issue. They are now working normally after a brief outage that lasted around 2 minutes. (Summarised by AI, details may not be accurate)"
+  "414": "My personal blog and Seerr website were temporarily unreachable due to an unknown issue. They are now working normally after a brief outage that lasted around 2 minutes. (Summarised by AI, details may not be accurate)",
+  "415": "phpMyAdmin was temporarily unreachable due to a connection issue starting at 5:41 UTC on October 25, 2026. I resolved the issue just 1 minute later, at 5:42 UTC. Service is now restored and functioning normally. (Summarised by AI, details may not be accurate)"
 }
