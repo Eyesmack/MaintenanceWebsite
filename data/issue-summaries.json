@@ -408,5 +408,6 @@
   "500": "My website was temporarily unavailable due to an unknown issue, starting around 10:51 UTC on October 25, 2026. The problem was resolved about 43 minutes later, at 11:14 UTC. (Summarised by AI, details may not be accurate)",
   "503": "My blog was temporarily unavailable due to an unknown issue, and users were unable to access it from 11:10 to 11:19 UTC on October 25, 2026. I've resolved the issue and the blog is now accessible again. (Summarised by AI, details may not be accurate)",
   "505": "phpMyAdmin was temporarily unavailable due to an issue that prevented access as of 11:20 UTC. The problem was resolved within 3 minutes, and phpMyAdmin became accessible again by 11:23 UTC. (Summarised by AI, details may not be accurate)",
-  "508": "I experienced a brief outage with phpMyAdmin, making it unreachable from 11:25 UTC to 11:32 UTC. The issue is now resolved and phpMyAdmin is accessible again. (Summarised by AI, details may not be accurate)"
+  "508": "I experienced a brief outage with phpMyAdmin, making it unreachable from 11:25 UTC to 11:32 UTC. The issue is now resolved and phpMyAdmin is accessible again. (Summarised by AI, details may not be accurate)",
+  "511": "I experienced an issue with my server, making Dockge unreachable for a few minutes. The problem started at 11:30 UTC and was resolved by 11:33 UTC. (Summarised by AI, details may not be accurate)"
 }
