@@ -40,16 +40,16 @@ function buildMonthList(startDate, now) {
   return months;
 }
 
-function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp) {
+function renderMonthlySummary(appIds, downEventsByApp, months, now, monitoringStartByApp) {
   const headerRow = document.getElementById('monthly-summary-header');
   const body = document.getElementById('monthly-summary-body');
 
   const monthHeader = document.createElement('th');
   monthHeader.textContent = 'Month';
   headerRow.appendChild(monthHeader);
-  for (const app of appNames) {
+  for (const app of appIds) {
     const th = document.createElement('th');
-    th.textContent = app;
+    th.textContent = getAppName(app);
     headerRow.appendChild(th);
   }
 
@@ -62,7 +62,7 @@ function renderMonthlySummary(appNames, downEventsByApp, months, now, monitoring
     monthCell.textContent = getMonthLabel(year, month);
     row.appendChild(monthCell);
 
-    for (const app of appNames) {
+    for (const app of appIds) {
       const issues = downEventsByApp[app] || [];
       // monthStart is always the calendar month's 1st, but this app's own
       // monitoring may have started partway through it (true only for its
@@ -154,7 +154,7 @@ function renderLiveIncidents(recentIssues) {
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
 
-let cachedAppNames = [];
+let cachedAppIds = [];
 let cachedLiveIncidentsFingerprint = null;
 
 // Same fingerprint-diff pattern as status.js's updateRecentUpdates/app.js's
@@ -178,7 +178,7 @@ function updateLiveIncidents(recentIssues) {
 // archive; out of scope here, same as index.html's Recent Updates not
 // live-migrating a card between its open/closed layouts either).
 async function refreshLiveIncidents() {
-  const { recentIssues } = await fetchAppIssues(cachedAppNames);
+  const { recentIssues } = await fetchAppIssues(cachedAppIds);
   updateLiveIncidents(recentIssues);
 
   lastUpdatedAt = new Date();
@@ -220,10 +220,10 @@ async function init() {
   document.getElementById('version-text-top').textContent = VERSION_NUMBER;
 
   const apps = await loadApps();
-  const appNames = Object.keys(apps);
-  cachedAppNames = appNames;
+  const appIds = Object.keys(apps);
+  cachedAppIds = appIds;
   const [{ recentIssues, downEventsByApp }, monitoringStartByApp, issueSummaries] =
-    await Promise.all([fetchAppIssues(appNames), fetchMonitoringStartDates(), fetchIssueSummaries()]);
+    await Promise.all([fetchAppIssues(appIds), fetchMonitoringStartDates(), fetchIssueSummaries()]);
 
   const now = new Date();
   // Always the fixed global date, not per-app — this only needs to be the
@@ -232,7 +232,7 @@ async function init() {
   // each app's actual date happens inside renderMonthlySummary.
   const months = buildMonthList(new Date(MONITORING_START_DATE), now);
 
-  renderMonthlySummary(appNames, downEventsByApp, months, now, monitoringStartByApp);
+  renderMonthlySummary(appIds, downEventsByApp, months, now, monitoringStartByApp);
   updateLiveIncidents(recentIssues);
   const hasIncidents = renderIncidentMonths(recentIssues, months, issueSummaries);
 

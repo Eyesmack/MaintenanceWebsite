@@ -6,13 +6,24 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.23.2';
+const VERSION_NUMBER = 'v1.24.0';
 
-// App-to-URL mapping lives in apps.json, shared with the GitHub Actions
-// status-check workflow so both stay in sync from one source of truth.
+// apps.json ({ "<id>": { name, url } }) is shared with the GitHub Actions
+// status-check workflow so both stay in sync from one source of truth. The
+// id is an app's permanent identity — its GitHub label, and its key in
+// every data/*.json file and in app.html?app=<id> — so name and url can be
+// edited freely without losing history. Everything here passes ids around;
+// getAppName turns one into its display name only at render time.
+let appsById = {};
+
 async function loadApps() {
-  const res = await fetch('data/apps.json', { cache: 'no-store' });
-  return res.json();
+  const res = await fetch(`data/apps.json?v=${Date.now()}`, { cache: 'no-store' });
+  appsById = await res.json();
+  return appsById;
+}
+
+function getAppName(id) {
+  return appsById[id]?.name || id;
 }
 
 // latency-history.json is committed by the workflow (see status-check.yml)
@@ -29,7 +40,7 @@ async function fetchLatencyHistory() {
 }
 
 // monitoring-start.json is committed by the workflow (see status-check.yml)
-// the first time it ever sees a given app name in apps.json — same
+// the first time it ever sees a given app id in apps.json — same
 // same-origin static-file pattern as fetchLatencyHistory, no GitHub API/
 // rate-limit involvement.
 async function fetchMonitoringStartDates() {
@@ -63,7 +74,7 @@ async function fetchIssueSummaries() {
   }
 }
 
-// Open issues in this repo labeled with an app key (e.g. "notflix")
+// Open issues in this repo labeled with an app id (e.g. "io5bwbp0")
 // are treated as manual status updates and shown on that app's card.
 const GITHUB_REPO = { owner: 'Eyesmack', repo: 'MaintenanceWebsite' };
 
@@ -107,7 +118,7 @@ function parseZonedDateTime(naiveStr, timeZone) {
 // body. Returns null if that line isn't present/parseable. `label` is
 // escaped before building the RegExp — a no-op for the fixed-string labels
 // below, but this is also called with a dynamic per-app label
-// (`Recovered-<app>`, see resolveIssueInterval), and app names are
+// (`Recovered-<app id>`, see resolveIssueInterval), and app ids are
 // user-editable via apps.json.
 function extractDeclaredTimestamp(body, label) {
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -138,28 +149,45 @@ function extractIncidentStart(body) {
   return extractDeclaredTimestamp(body, 'Incident-Start');
 }
 
-// Only issues labeled with a known app name are matched (label match is
-// case-insensitive, so "Homepage" in apps.json matches a "homepage"
-// label); anything else in the repo (site bugs, feature requests, etc.)
-// is ignored so it never shows up on the public page. Fetches every
-// issue (open and closed) in one call: issuesByApp (open only) drives
-// the per-app card badge/message, recentIssues (open+closed, already
-// newest-first from the API) feeds the Recent Updates section.
+// The issues endpoint caps a page at 100, and uptime ("All Time", the
+// monthly history table) needs every issue ever filed, not just the newest
+// 100 — so keep paging until a short page. MAX_ISSUE_PAGES only bounds a
+// runaway (e.g. another flood of auto-outage issues); each page is one
+// request against the proxy's shared rate limit, per viewer, per refresh.
+const MAX_ISSUE_PAGES = 10;
+
+async function fetchAllIssues() {
+  const issues = [];
+  for (let page = 1; page <= MAX_ISSUE_PAGES; page++) {
+    const res = await fetch(
+      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&page=${page}&sort=created&direction=desc`,
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
+    const pageIssues = await res.json();
+    issues.push(...pageIssues);
+    if (pageIssues.length < 100) break;
+  }
+  return issues;
+}
+
+// Only issues labeled with a known app id are matched (case-insensitive,
+// though ids are always lowercase); anything else in the repo (site bugs,
+// feature requests, etc.) is ignored so it never shows up on the public
+// page. Fetches every issue (open and closed): issuesByApp (open only)
+// drives the per-app card badge/message, recentIssues (open+closed,
+// already newest-first from the API) feeds the Recent Updates section.
+// Every returned map is keyed by app id, and recentIssues' `apps` are ids.
 // Failures here are swallowed so a GitHub API hiccup never blocks the
 // reachability checks.
-async function fetchAppIssues(appNames) {
+async function fetchAppIssues(appIds) {
   const issuesByApp = {};
   const recentIssues = [];
   const hasOpenAutoOutage = {};
   const inMaintenance = {};
   const downEventsByApp = {};
   try {
-    const res = await fetch(
-      `${GITHUB_PROXY_BASE}/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
-      { headers: { Accept: 'application/vnd.github+json' } }
-    );
-    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
-    const issues = await res.json();
+    const issues = await fetchAllIssues();
     for (const issue of issues) {
       if (issue.pull_request) continue;
       const labels = issue.labels.map((label) =>
@@ -168,7 +196,7 @@ async function fetchAppIssues(appNames) {
       // An issue can carry more than one app's label (e.g. a
       // whole-server maintenance notice) — match all of them, not just
       // the first, so it shows up on every affected app's card.
-      const matchedApps = appNames.filter((name) => labels.includes(name.toLowerCase()));
+      const matchedApps = appIds.filter((id) => labels.includes(id.toLowerCase()));
       if (!matchedApps.length) continue;
 
       // The "update" label marks an issue as a planned/informational note
@@ -180,12 +208,12 @@ async function fetchAppIssues(appNames) {
       // Every matched issue (open or closed, planned or not) counts as a
       // down-period for uptime% purposes — tracked unconditionally, unlike
       // issuesByApp below which is open-only and drives the live badge.
-      for (const appName of matchedApps) {
-        (downEventsByApp[appName] ||= []).push(issue);
+      for (const appId of matchedApps) {
+        (downEventsByApp[appId] ||= []).push(issue);
       }
 
       if (issue.state === 'open') {
-        for (const appName of matchedApps) {
+        for (const appId of matchedApps) {
           // An app can individually recover while a shared incident issue
           // stays open for other still-down apps (see status-check.yml's
           // Recovered-<label> body marker, and resolveIssueInterval's
@@ -193,19 +221,19 @@ async function fetchAppIssues(appNames) {
           // issue and its label remain attached (permanently, so
           // downEventsByApp above still correctly attributes the
           // historical downtime to it).
-          const recovered = extractDeclaredTimestamp(issue.body, `Recovered-${appName.toLowerCase()}`);
+          const recovered = extractDeclaredTimestamp(issue.body, `Recovered-${appId.toLowerCase()}`);
           if (recovered) continue;
 
-          (issuesByApp[appName] ||= []).push(issue);
+          (issuesByApp[appId] ||= []).push(issue);
           if (labels.includes('auto-outage')) {
-            hasOpenAutoOutage[appName] = true;
+            hasOpenAutoOutage[appId] = true;
           }
           if (isUpdate) {
             const window = extractMaintenanceWindow(issue.body);
             if (window) {
               const now = new Date();
               if (now >= window.start && now <= window.end) {
-                inMaintenance[appName] = true;
+                inMaintenance[appId] = true;
               }
             }
           }
@@ -507,7 +535,7 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
 
     const affectedApps = document.createElement('p');
     affectedApps.className = 'small opacity-75 mb-2';
-    affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+    affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
 
     const summaryHeading = document.createElement('h6');
     summaryHeading.className = 'small text-uppercase opacity-75 mb-1';
@@ -602,7 +630,7 @@ function renderClosedIncidentCard(entry, summariesByIssue) {
 
   const affectedApps = document.createElement('p');
   affectedApps.className = 'small opacity-75 mb-1 text';
-  affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+  affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
 
   // A closed issue this feature shipped after (or one Workers AI hasn't
   // gotten to yet — the summarize-incident.yml run lands within seconds
@@ -674,7 +702,7 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
 
   const affectedApps = document.createElement('p');
   affectedApps.className = 'small opacity-75 mb-1 text';
-  affectedApps.textContent = `Affected Apps: ${apps.join(', ')}`;
+  affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
 
   const description = document.createElement('div');
   description.className = 'markdown-body mb-2 text';

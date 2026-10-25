@@ -176,14 +176,13 @@ jobs:
           recovered_json='[]'   # [{label, key, existing, note}] — apps back up (or now in announced maintenance) with an open issue
           newly_down_json='[]'  # [{label, key, url, status}] — apps that just crossed FAILURE_THRESHOLD
 
-          while IFS=$'\t' read -r key url; do
-            # Labels are always lowercase regardless of how apps.json
-            # capitalizes the app name, so this stays in sync with the page's
-            # case-insensitive label matching no matter the casing used.
-            label=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
-
-            if [[ "$(echo "$monitoring_json" | jq -r --arg k "$key" 'has($k)')" == "false" ]]; then
-              monitoring_json=$(echo "$monitoring_json" | jq --arg k "$key" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '.[$k] = $t')
+          # apps.json is { "<id>": { "name", "url" } }. The id is the app's
+          # permanent identity: its GitHub label, and its key in state_json,
+          # monitoring-start.json and latency-history.json. `key` (the
+          # display name) and url are free to change without losing history.
+          while IFS=$'\t' read -r label key url; do
+            if [[ "$(echo "$monitoring_json" | jq -r --arg k "$label" 'has($k)')" == "false" ]]; then
+              monitoring_json=$(echo "$monitoring_json" | jq --arg k "$label" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '.[$k] = $t')
               monitoring_changed=true
               echo "First time seeing $key — recording monitoring start date"
             fi
@@ -197,7 +196,7 @@ jobs:
 
             if [[ "$record_latency" == true ]]; then
               latency_ms=$(awk -v t="$time_total" 'BEGIN { printf "%.0f", t * 1000 }')
-              latency_json=$(echo "$latency_json" | jq --arg k "$key" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --argjson ms "$latency_ms" \
+              latency_json=$(echo "$latency_json" | jq --arg k "$label" --arg t "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --argjson ms "$latency_ms" \
                 '.[$k] = ((.[$k] // []) + [{t: $t, ms: $ms}])')
             fi
 
@@ -264,7 +263,7 @@ jobs:
                 fi
               fi
             fi
-          done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' data/apps.json)
+          done < <(jq -r 'to_entries[] | "\(.key)\t\(.value.name)\t\(.value.url)"' data/apps.json)
 
           # Pass 2a: recoveries, grouped by the issue they belong to
           # (several apps recovering this run can share the same combined
@@ -419,4 +418,9 @@ jobs:
           # Process substitution (< <(...)) runs the while loop in this same
           # shell, not a subshell, so state_json's accumulated updates are
           # still here — write them back once, rather than on every app.
+          # Counters for apps no longer in apps.json (removed apps, or the
+          # pre-ID name-keyed entries) are dropped; "_"-prefixed bookkeeping
+          # keys like _lastLatencyHour are kept.
+          state_json=$(echo "$state_json" | jq --argjson ids "$(jq 'keys' data/apps.json)" \
+            'with_entries(select((.key | startswith("_")) or (.key as $k | $ids | any(. == $k))))')
           gh_retry gh issue edit "$state_issue_number" --repo "$GH_REPO" --body "$state_json"

@@ -1,5 +1,5 @@
-// app.js — renders one app's detail page (app.html?app=<name>), driven by
-// the `app` query param matched against apps.json's keys. Mirrors
+// app.js — renders one app's detail page (app.html?app=<id>), driven by
+// the `app` query param matched against apps.json's keys (app ids). Mirrors
 // status.js's live-refresh architecture (refreshAppStatus/scheduleRefresh)
 // scoped to one fixed set of elements instead of one card per app. Recent
 // Events' cards and the uptime history strip are shared with status.js via
@@ -31,11 +31,11 @@ const OVERALL_UPTIME_WINDOWS = [
   { id: 'app-uptime-90d', ms: 90 * 24 * 60 * 60 * 1000 },
 ];
 
-let allAppNames = [];
-let targetApp = null;
+let allAppIds = [];
+let targetApp = null; // an app id — see common.js's loadApps
 let baseTitle = null; // e.g. "Notflix | Status | Isaac Mason", set once targetApp is known
 
-// monitoring-start.json's result ({ appName: isoDate }) — fetched once at
+// monitoring-start.json's result ({ appId: isoDate }) — fetched once at
 // init() alongside apps.json, resolved for targetApp via common.js's
 // getMonitoringStart.
 let cachedMonitoringStartByApp = {};
@@ -49,17 +49,17 @@ let cachedIssueSummaries = {};
 // tickCountdown, and startCountdownTicker now live in common.js (loaded
 // before this file), shared with status.js's header countdown.
 
-// Exact, case-sensitive match against apps.json's keys — those preserve
-// canonical capitalization (e.g. "Nginx Proxy Manager"), unlike
-// fetchAppIssues' GitHub-label matching, which is separately
-// case-insensitive for an unrelated reason (labels are lowercase-only).
-// Returns null for missing/empty/unrecognized values, including an app
-// since removed from apps.json, so init() can show "not found" without
-// ever calling the GitHub proxy.
-function getRequestedAppName(apps) {
+// Resolves the `app` param to an app id: an exact id match first, then a
+// case-insensitive match on the current display name, so links from
+// before apps were keyed by id (app?app=Notflix) keep working — as long as
+// that app still has that name. Returns null for missing/empty/
+// unrecognized values, including an app since removed from apps.json, so
+// init() can show "not found" without ever calling the GitHub proxy.
+function getRequestedAppId(apps) {
   const raw = new URLSearchParams(location.search).get('app');
   if (!raw) return null;
-  return Object.keys(apps).includes(raw) ? raw : null;
+  if (Object.hasOwn(apps, raw)) return raw;
+  return Object.keys(apps).find((id) => apps[id].name.toLowerCase() === raw.toLowerCase()) || null;
 }
 
 function buildFaviconDataUrl(color) {
@@ -270,7 +270,7 @@ function updateAppRecentUpdates(recentIssues) {
 
 async function refreshAppPage() {
   const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
-    await Promise.all([fetchAppIssues(allAppNames), fetchLatencyHistory(), fetchIssueSummaries()]);
+    await Promise.all([fetchAppIssues(allAppIds), fetchLatencyHistory(), fetchIssueSummaries()]);
   cachedIssueSummaries = issueSummaries;
 
   const issues = downEventsByApp[targetApp] || [];
@@ -315,8 +315,8 @@ function renderNotFound() {
 
 async function init() {
   const [apps, monitoringStartByApp] = await Promise.all([loadApps(), fetchMonitoringStartDates()]);
-  allAppNames = Object.keys(apps);
-  targetApp = getRequestedAppName(apps);
+  allAppIds = Object.keys(apps);
+  targetApp = getRequestedAppId(apps);
   cachedMonitoringStartByApp = monitoringStartByApp;
 
   document.getElementById('app-loading').classList.add('d-none');
@@ -328,9 +328,9 @@ async function init() {
     return;
   }
 
-  baseTitle = `${targetApp} | Status | Isaac Mason`;
+  baseTitle = `${getAppName(targetApp)} | Status | Isaac Mason`;
   document.title = baseTitle;
-  document.getElementById('app-name').textContent = targetApp;
+  document.getElementById('app-name').textContent = getAppName(targetApp);
   document.getElementById('app-found').classList.remove('d-none');
   startCountdownTicker('last-updated');
 

@@ -116,7 +116,9 @@ function updateHeading(state) {
 }
 
 // Builds one status card per entry in apps.json, so adding or removing
-// an app there is all it takes to add or remove it from the page.
+// an app there is all it takes to add or remove it from the page. `app` is
+// the app's id (see common.js's loadApps) — the card is keyed by it, and
+// only the visible link text uses the display name.
 function createStatusCard(app) {
   const col = document.createElement('div');
   col.className = 'col';
@@ -132,7 +134,7 @@ function createStatusCard(app) {
   const nameLink = document.createElement('a');
   nameLink.href = `app?app=${encodeURIComponent(app)}`;
   nameLink.className = 'app-name-link';
-  nameLink.textContent = app;
+  nameLink.textContent = getAppName(app);
   title.append(nameLink, ' ');
   const badge = document.createElement('span');
   badge.className = 'badge rounded-pill bg-secondary';
@@ -250,17 +252,18 @@ let cachedDownEventsByApp = {};
 // Per-app response-time samples from latency-history.json.
 let cachedLatencyByApp = {};
 
-// All app names, cached so the shared timeframe selector's change handler
+// All app ids, cached so the shared timeframe selector's change handler
 // can update every card — Object.keys(cachedDownEventsByApp) alone isn't
 // reliable for this since an app with zero matched issues ever never gets
 // a key in that map at all.
-let cachedAppNames = [];
+let cachedAppIds = [];
 
-// apps.json's result — only app names are used client-side now (see
-// refreshAppStatus), but the map is kept around rather than re-fetched.
+// apps.json's result — only app ids (and, via getAppName, names) are used
+// client-side now (see refreshAppStatus), but the map is kept around
+// rather than re-fetched.
 let cachedApps = {};
 
-// monitoring-start.json's result ({ appName: isoDate }) — fetched once at
+// monitoring-start.json's result ({ appId: isoDate }) — fetched once at
 // init() alongside apps.json (it changes about as often, i.e. only when a
 // new app is added), resolved per-app via common.js's getMonitoringStart.
 let cachedMonitoringStartByApp = {};
@@ -271,7 +274,7 @@ let cachedMonitoringStartByApp = {};
 // page reload.
 let cachedIssueSummaries = {};
 
-// { appName: colElement }, from renderStatusCards() — kept so the refresh
+// { appId: colElement }, from renderStatusCards() — kept so the refresh
 // loop can update the existing card DOM in place instead of rebuilding it
 // every cycle (the app list never changes at runtime).
 let cachedCols = {};
@@ -302,7 +305,7 @@ function renderUptime(app) {
 // recomputes every app from the cached issue history, no re-fetch.
 function initUptimeTimeframeSelector() {
   document.getElementById('uptime-timeframe-select')?.addEventListener('change', () => {
-    cachedAppNames.forEach((app) => renderUptime(app));
+    cachedAppIds.forEach((app) => renderUptime(app));
   });
 }
 
@@ -405,7 +408,7 @@ function initRecentUpdates() {
 // (the app list never changes at runtime; cachedCols reuses the same DOM).
 async function refreshAppStatus() {
   const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
-    await Promise.all([fetchAppIssues(cachedAppNames), fetchLatencyHistory(), fetchIssueSummaries()]);
+    await Promise.all([fetchAppIssues(cachedAppIds), fetchLatencyHistory(), fetchIssueSummaries()]);
 
   cachedDownEventsByApp = downEventsByApp;
   cachedLatencyByApp = latencyByApp;
@@ -414,10 +417,10 @@ async function refreshAppStatus() {
   // "Online" comes entirely from the workflow's own server-side checks (an
   // open auto-outage issue) or an announced maintenance window.
   const onlineByApp = Object.fromEntries(
-    cachedAppNames.map((app) => [app, !hasOpenAutoOutage[app] && !inMaintenance[app]])
+    cachedAppIds.map((app) => [app, !hasOpenAutoOutage[app] && !inMaintenance[app]])
   );
 
-  cachedAppNames.forEach((app) => {
+  cachedAppIds.forEach((app) => {
     const online = onlineByApp[app];
     const issues = issuesByApp[app];
     setBadge(cachedCols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
@@ -427,7 +430,7 @@ async function refreshAppStatus() {
     renderLatencyHistory(app);
   });
 
-  const state = getOverallState(cachedAppNames.map((app) => onlineByApp[app]));
+  const state = getOverallState(cachedAppIds.map((app) => onlineByApp[app]));
   updateHeading(state);
   updateFaviconAndTitle(state);
   updateRecentUpdates(recentIssues);
@@ -475,7 +478,7 @@ async function init() {
   [cachedApps, cachedMonitoringStartByApp] = await Promise.all([loadApps(), fetchMonitoringStartDates()]);
   createUptimeTimeframeSelector();
   cachedCols = renderStatusCards(cachedApps);
-  cachedAppNames = Object.keys(cachedApps);
+  cachedAppIds = Object.keys(cachedApps);
 
   initUptimeTimeframeSelector();
   initRecentUpdates();

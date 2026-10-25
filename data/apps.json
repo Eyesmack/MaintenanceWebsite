@@ -1,10 +1,34 @@
 {
-  "Homepage": "https://isaacmason.co.nz",
-  "Blog": "https://blog.isaacmason.co.nz",
-  "CDN": "https://cdn.isaacmason.co.nz",
-  "Notflix": "https://movies.isaacmason.co.nz",
-  "Seerr": "https://seerr.isaacmason.co.nz",
-  "Dockge": "https://dockge.isaacmason.co.nz",
-  "phpMyAdmin": "https://phpmyadmin.isaacmason.co.nz/",
-  "Nginx Proxy Manager": "https://nginx.isaacmason.co.nz/"
+  "btwgdtgg": {
+    "name": "Homepage",
+    "url": "https://isaacmason.co.nz"
+  },
+  "lc5gk8qe": {
+    "name": "Blog",
+    "url": "https://blog.isaacmason.co.nz"
+  },
+  "7npuz2ce": {
+    "name": "CDN",
+    "url": "https://cdn.isaacmason.co.nz"
+  },
+  "io5bwbp0": {
+    "name": "Notflix",
+    "url": "https://movies.isaacmason.co.nz"
+  },
+  "1oknfo1a": {
+    "name": "Seerr",
+    "url": "https://seerr.isaacmason.co.nz"
+  },
+  "kityrq69": {
+    "name": "Dockge",
+    "url": "https://dockge.isaacmason.co.nz"
+  },
+  "i21m2dyn": {
+    "name": "phpMyAdmin",
+    "url": "https://phpmyadmin.isaacmason.co.nz/"
+  },
+  "f3am1wrx": {
+    "name": "Nginx Proxy Manager",
+    "url": "https://nginx.isaacmason.co.nz/"
+  }
 }
