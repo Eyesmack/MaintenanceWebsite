@@ -278,5 +278,6 @@
   "350": "I experienced an issue where phpMyAdmin was temporarily unavailable, but it's now back up and working normally. The problem lasted for about 0 minutes, as it was resolved at the same time the issue was detected. (Summarised by AI, details may not be accurate)",
   "355": "I experienced an issue with phpMyAdmin, making it temporarily unreachable. It was restored to normal function at 01:54 UTC on October 25, 2026. The problem lasted for approximately 2 minutes. (Summarised by AI, details may not be accurate)",
   "353": "My homepage and blog were unreachable due to an unknown issue starting around 1:49 UTC on October 25, 2026. The blog became available again at 1:59 UTC, and the homepage was back up at 2:01 UTC. (Summarised by AI, details may not be accurate)",
-  "356": "I experienced an issue with phpMyAdmin that made it unreachable starting at 1:56 AM UTC on October 25, 2026. The problem was resolved about 6 minutes later, by 2:02 AM UTC. (Summarised by AI, details may not be accurate)"
+  "356": "I experienced an issue with phpMyAdmin that made it unreachable starting at 1:56 AM UTC on October 25, 2026. The problem was resolved about 6 minutes later, by 2:02 AM UTC. (Summarised by AI, details may not be accurate)",
+  "354": "My website was not available between 1:49 AM and 2:03 AM UTC on October 25, 2026. The homepage was fixed at 2:03 AM, and the blog was restored at 1:57 AM. The issue lasted for about 14 minutes. (Summarised by AI, details may not be accurate)"
 }
