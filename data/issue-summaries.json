@@ -326,5 +326,6 @@
   "404": "My website's homepage, blog, and Seerr were not working as of 05:08 UTC. The homepage and blog came back online at 05:23 UTC, and Seerr was back up at 18:20 UTC. The issues were resolved within 8 hours and 13 minutes. (Summarised by AI, details may not be accurate)",
   "409": "I'm sorry that phpMyAdmin was unavailable. It was unreachable for about 1 minute, starting around 05:23 UTC on October 25, 2026. The issue is now resolved. (Summarised by AI, details may not be accurate)",
   "410": "phpMyAdmin was temporarily unavailable due to a connection issue, but it's now working normally. The problem lasted for about 1 minute before being resolved. (Summarised by AI, details may not be accurate)",
-  "411": "phpMyAdmin was temporarily unavailable for about 0 minutes. It became unreachable at 05:28 UTC and was restored at 05:28 UTC. I've now fixed the issue and phpMyAdmin is working normally again. (Summarised by AI, details may not be accurate)"
+  "411": "phpMyAdmin was temporarily unavailable for about 0 minutes. It became unreachable at 05:28 UTC and was restored at 05:28 UTC. I've now fixed the issue and phpMyAdmin is working normally again. (Summarised by AI, details may not be accurate)",
+  "412": "My website was temporarily unavailable due to an unknown issue, and automated checks couldn't reach it. The problem was fixed within 3 minutes, and my homepage is now accessible again. (Summarised by AI, details may not be accurate)"
 }
