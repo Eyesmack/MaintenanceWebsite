@@ -1,12 +1,8 @@
 {
-  "btwgdtgg": {
-    "name": "Homepage",
-    "url": "https://isaacmason.co.nz"
-  },
   "lc5gk8qe": {
-    "name": "Blog",
-    "url": "https://blog.isaacmason.co.nz",
-    "statusApi": "https://blog.isaacmason.co.nz/api/v1/status"
+    "name": "Isaac's Index",
+    "url": "https://isaacmason.co.nz",
+    "statusApi": "https://isaacmason.co.nz/api/v1/status"
   },
   "7npuz2ce": {
     "name": "CDN",
@@ -16,20 +12,16 @@
     "name": "Notflix",
     "url": "https://movies.isaacmason.co.nz"
   },
-  "1oknfo1a": {
-    "name": "Seerr",
-    "url": "https://seerr.isaacmason.co.nz"
-  },
   "kityrq69": {
     "name": "Dockge",
     "url": "https://dockge.isaacmason.co.nz"
   },
   "i21m2dyn": {
-    "name": "phpMyAdmin",
+    "name": "Database",
     "url": "https://phpmyadmin.isaacmason.co.nz/"
   },
   "f3am1wrx": {
-    "name": "Nginx Proxy Manager",
+    "name": "NPM",
     "url": "https://nginx.isaacmason.co.nz/"
   }
 }
