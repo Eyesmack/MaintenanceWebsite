@@ -376,5 +376,6 @@
   "465": "My website's homepage and phpMyAdmin were unreachable starting at 08:17 UTC on October 25, 2026. The issues were resolved at 08:21 UTC for the homepage and 21:18 UTC for phpMyAdmin, a total of about 11 hours for phpMyAdmin. (Summarised by AI, details may not be accurate)",
   "467": "My website, including the homepage and blog, was unreachable from 08:25 UTC to 08:29 UTC on October 25, 2026, due to an unknown issue. The problem was resolved after about 1 hour. (Summarised by AI, details may not be accurate)",
   "468": "I experienced an issue where phpMyAdmin was temporarily unavailable. The problem started at 08:30 UTC and lasted for approximately 0 minutes before being resolved at the same time, with phpMyAdmin responding normally. (Summarised by AI, details may not be accurate)",
-  "469": "My website was temporarily unavailable due to an unknown issue, starting at 8:32 UTC on October 25, 2026. I was able to resolve the problem and the site was back up by 8:35 UTC on the same day. (Summarised by AI, details may not be accurate)"
+  "469": "My website was temporarily unavailable due to an unknown issue, starting at 8:32 UTC on October 25, 2026. I was able to resolve the problem and the site was back up by 8:35 UTC on the same day. (Summarised by AI, details may not be accurate)",
+  "470": "My server, seerr.isaacmason.co.nz, was unreachable for about 1 minute starting at 8:38 UTC on October 25, 2026. I've restored it, and it's now working normally. (Summarised by AI, details may not be accurate)"
 }
