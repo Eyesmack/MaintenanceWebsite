@@ -259,5 +259,6 @@
   "325": "My website was temporarily unreachable due to an unknown issue. It was back online about 5 minutes later. (Summarised by AI, details may not be accurate)",
   "328": "My server was temporarily unreachable, causing the homepage to be down for about 2 minutes. I'm happy to report that the issue has been resolved. (Summarised by AI, details may not be accurate)",
   "329": "My phpMyAdmin was temporarily unavailable, but it's now working again. The issue lasted for about 1 minute. Service is fully restored. (Summarised by AI, details may not be accurate)",
-  "330": "My blog was temporarily unreachable due to a technical issue. It was back online about 1 minute later. The problem was resolved at 00:28 UTC on October 25, 2026. (Summarised by AI, details may not be accurate)"
+  "330": "My blog was temporarily unreachable due to a technical issue. It was back online about 1 minute later. The problem was resolved at 00:28 UTC on October 25, 2026. (Summarised by AI, details may not be accurate)",
+  "331": "My blog was temporarily unreachable due to a connection issue, but it's now back online. The problem lasted for about 3 minutes. (Summarised by AI, details may not be accurate)"
 }
