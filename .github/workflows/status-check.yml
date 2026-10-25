@@ -136,6 +136,35 @@ jobs:
           echo "$monitoring_json" | jq empty >/dev/null 2>&1 || monitoring_json='{}'
           monitoring_changed=false
 
+          # A planned-maintenance issue (app label + "update") can declare a
+          # Maintenance-Start/Maintenance-End window (NZ time) in its body.
+          # Prints the number of an open one whose window contains *now*
+          # for the given label, or nothing. Called at decision time and
+          # again right before filing (see Pass 2b), since a run takes a few
+          # minutes and can cross a window's start partway through.
+          maintenance_issue_for() {
+            local label=$1 rows row number body start_str end_str start_epoch end_epoch now_epoch
+            rows=$(gh_retry gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
+              --json number,body --jq '.[] | @base64') || return 0
+            now_epoch=$(date -u +%s)
+            while IFS= read -r row; do
+              [[ -z "$row" ]] && continue
+              number=$(printf '%s' "$row" | base64 -d | jq -r '.number')
+              body=$(printf '%s' "$row" | base64 -d | jq -r '.body // ""')
+              # grep exits 1 when there's no match (the normal case when no
+              # window is declared) — `|| true` keeps that from failing.
+              start_str=$(printf '%s' "$body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+              end_str=$(printf '%s' "$body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
+              [[ -z "$start_str" || -z "$end_str" ]] && continue
+              start_epoch=$(TZ='Pacific/Auckland' date -d "$start_str" +%s 2>/dev/null || echo "")
+              end_epoch=$(TZ='Pacific/Auckland' date -d "$end_str" +%s 2>/dev/null || echo "")
+              if [[ -n "$start_epoch" && -n "$end_epoch" && "$now_epoch" -ge "$start_epoch" && "$now_epoch" -le "$end_epoch" ]]; then
+                echo "$number"
+                return 0
+              fi
+            done <<< "$rows"
+          }
+
           # Pass 1: check every app's reachability and update fail-streak
           # state, but only *decide* what to do about outages/recoveries
           # here — the actual issue creation/closing happens in Pass 2
@@ -144,7 +173,7 @@ jobs:
           # shared issue, and a combined issue's apps recover independently
           # of each other, instead of each app being handled in isolation
           # as it's checked.
-          recovered_json='[]'   # [{label, key, existing}] — apps back up this run with an open issue
+          recovered_json='[]'   # [{label, key, existing, note}] — apps back up (or now in announced maintenance) with an open issue
           newly_down_json='[]'  # [{label, key, url, status}] — apps that just crossed FAILURE_THRESHOLD
 
           while IFS=$'\t' read -r key url; do
@@ -192,12 +221,29 @@ jobs:
                   echo "$key already recorded as recovered on issue #$existing, skipping"
                 else
                   recovered_json=$(echo "$recovered_json" | jq --arg l "$label" --arg k "$key" --argjson n "$existing" \
-                    '. + [{label: $l, key: $k, existing: $n}]')
+                    '. + [{label: $l, key: $k, existing: $n, note: "responded normally"}]')
                 fi
               fi
             else
               if [[ -n "$existing" ]]; then
-                echo "Issue #$existing already open for $key, skipping"
+                # An outage that runs into an announced maintenance window
+                # ends there: from then on the downtime is the maintenance
+                # notice's, and leaving the outage open would count the same
+                # period twice. Ended through Pass 2a like a recovery, so a
+                # combined issue's other apps are unaffected and the
+                # Recovered-<label> marker records this app's end time.
+                maintenance_number=$(maintenance_issue_for "$label")
+                if [[ -z "$maintenance_number" ]]; then
+                  echo "Issue #$existing already open for $key, skipping"
+                elif gh_retry gh issue view "$existing" --repo "$GH_REPO" --json body --jq '(.body // "")' \
+                    | grep -qF "Recovered-${label}:"; then
+                  echo "$key already marked as ended on issue #$existing, skipping"
+                else
+                  recovered_json=$(echo "$recovered_json" | jq --arg l "$label" --arg k "$key" --argjson n "$existing" \
+                    --arg note "is inside the announced maintenance window (#$maintenance_number)" \
+                    '. + [{label: $l, key: $k, existing: $n, note: $note}]')
+                  echo "$key is now within announced maintenance #$maintenance_number — ending outage issue #$existing"
+                fi
               else
                 fail_count=$(echo "$state_json" | jq -r --arg k "$label" '(.[$k] // 0) + 1')
                 state_json=$(echo "$state_json" | jq --arg k "$label" --argjson c "$fail_count" '.[$k] = $c')
@@ -205,31 +251,11 @@ jobs:
                 if (( fail_count < FAILURE_THRESHOLD )); then
                   echo "$key down ($fail_count/$FAILURE_THRESHOLD consecutive failures) — not yet confirmed"
                 else
-                  # A planned-maintenance issue (app label + "update") can
-                  # declare a Maintenance-Start/Maintenance-End window (NZ
-                  # time) in its body; if now falls inside it, the app being
-                  # down is expected, so skip creating an outage issue.
-                  maintenance_body=$(gh_retry gh issue list --repo "$GH_REPO" --label "$label,update" --state open \
-                    --json body --jq '(.[0].body // "")')
-
-                  # grep exits 1 when there's no match (the normal case when
-                  # no maintenance window is declared) — with pipefail + the
-                  # shell's own -e, that would otherwise kill the whole job.
-                  start_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-Start:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
-                  end_str=$(printf '%s' "$maintenance_body" | grep -oP '(?<=Maintenance-End:\s)\d{4}-\d{2}-\d{2} \d{2}:\d{2}' | head -1 || true)
-
-                  in_window=false
-                  if [[ -n "$start_str" && -n "$end_str" ]]; then
-                    start_epoch=$(TZ='Pacific/Auckland' date -d "$start_str" +%s 2>/dev/null || echo "")
-                    end_epoch=$(TZ='Pacific/Auckland' date -d "$end_str" +%s 2>/dev/null || echo "")
-                    now_epoch=$(date -u +%s)
-                    if [[ -n "$start_epoch" && -n "$end_epoch" && "$now_epoch" -ge "$start_epoch" && "$now_epoch" -le "$end_epoch" ]]; then
-                      in_window=true
-                    fi
-                  fi
-
-                  if [[ "$in_window" == true ]]; then
-                    echo "$key is down but within an announced maintenance window, skipping"
+                  # Down inside an announced maintenance window is expected,
+                  # so skip creating an outage issue.
+                  maintenance_number=$(maintenance_issue_for "$label")
+                  if [[ -n "$maintenance_number" ]]; then
+                    echo "$key is down but within announced maintenance #$maintenance_number, skipping"
                   else
                     newly_down_json=$(echo "$newly_down_json" | jq --arg l "$label" --arg k "$key" --arg u "$url" --arg s "$status" \
                       '. + [{label: $l, key: $k, url: $u, status: $s}]')
@@ -256,7 +282,7 @@ jobs:
             now_str=$(date -u +'%Y-%m-%d %H:%M UTC')
             for issue_number in $(echo "$recovered_json" | jq -r '[.[].existing] | unique | .[]'); do
               recovered_for_issue=$(echo "$recovered_json" | jq --argjson n "$issue_number" '[.[] | select(.existing == $n)]')
-              recovered_keys=$(echo "$recovered_for_issue" | jq -r '[.[].key] | join(", ")')
+              recovered_summary=$(echo "$recovered_for_issue" | jq -r '[.[] | "\(.key) \(.note)"] | join("; ")')
               recovered_labels_json=$(echo "$recovered_for_issue" | jq '[.[].label]')
 
               current_issue=$(gh_retry gh issue view "$issue_number" --repo "$GH_REPO" --json labels,body --jq \
@@ -290,16 +316,16 @@ jobs:
                 # run's batch (don't need one — closed_at already
                 # correctly represents their end time too).
                 gh_retry gh issue close "$issue_number" --repo "$GH_REPO" \
-                  --comment "Recovered — $recovered_keys responded normally at $now_str."
-                echo "Closed issue #$issue_number ($recovered_keys recovered)"
+                  --comment "Closed at $now_str — $recovered_summary."
+                echo "Closed issue #$issue_number ($recovered_summary)"
               else
                 recovery_lines=$(echo "$recovered_for_issue" | jq -r --arg t "$now_nz" '.[] | "Recovered-\(.label): \($t)"')
                 new_body=$(printf '%s\n\n%s' "$current_body" "$recovery_lines")
 
                 gh_retry gh issue edit "$issue_number" --repo "$GH_REPO" --body "$new_body"
                 gh_retry gh issue comment "$issue_number" --repo "$GH_REPO" \
-                  --body "✅ $recovered_keys recovered at $now_str. Still monitoring the rest."
-                echo "Recorded recovery for $recovered_keys on issue #$issue_number (others still down)"
+                  --body "✅ As of $now_str: $recovered_summary. Still monitoring the rest."
+                echo "Recorded end for $recovered_summary on issue #$issue_number (others still down)"
               fi
             done
           fi
@@ -311,6 +337,24 @@ jobs:
           # root cause (the server itself, DNS, Cloudflare, etc). A lone
           # newly-down app still gets exactly the same single-app issue
           # shape as before.
+          #
+          # Re-check announced maintenance right before filing: Pass 1 can
+          # run just before a window starts and this point just after it
+          # (a run takes a few minutes), which would file an outage for
+          # downtime the maintenance notice already covers.
+          still_newly_down_json='[]'
+          while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
+            entry_label=$(echo "$entry" | jq -r '.label')
+            maintenance_number=$(maintenance_issue_for "$entry_label")
+            if [[ -n "$maintenance_number" ]]; then
+              echo "$(echo "$entry" | jq -r '.key') entered announced maintenance #$maintenance_number during this run, not filing"
+            else
+              still_newly_down_json=$(echo "$still_newly_down_json" | jq --argjson e "$entry" '. + [$e]')
+            fi
+          done < <(echo "$newly_down_json" | jq -c '.[]')
+          newly_down_json=$still_newly_down_json
+
           newly_down_count=$(echo "$newly_down_json" | jq 'length')
           if [[ "$newly_down_count" -eq 1 ]]; then
             key=$(echo "$newly_down_json" | jq -r '.[0].key')
