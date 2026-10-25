@@ -334,5 +334,6 @@
   "417": "I'm sorry, but my homepage and blog were briefly unavailable starting around 5:45 AM UTC on October 25, 2026. They're now working normally again, about 5 minutes after the issue started. (Summarised by AI, details may not be accurate)",
   "416": "My website was down due to issues with my homepage and blog, which started at around 5:44 UTC on October 25, 2026. The blog was back up by 5:51 UTC, and the homepage was fully recovered by 5:53 UTC on the same day. (Summarised by AI, details may not be accurate)",
   "419": "I experienced an issue with my phpMyAdmin service, which made it temporarily unreachable from 05:53 UTC to 05:55 UTC on October 25, 2026. The service is now working normally. The issue was resolved in just 2 minutes. (Summarised by AI, details may not be accurate)",
-  "422": "phpMyAdmin was temporarily unavailable due to a network issue, but it's now working normally. The problem lasted for about 1 minute. Service has been restored. (Summarised by AI, details may not be accurate)"
+  "422": "phpMyAdmin was temporarily unavailable due to a network issue, but it's now working normally. The problem lasted for about 1 minute. Service has been restored. (Summarised by AI, details may not be accurate)",
+  "421": "My homepage and blog were unreachable from 05:58 UTC on October 25, 2026, until 06:05 UTC, when they became available again. The issue was resolved in about an hour. (Summarised by AI, details may not be accurate)"
 }
