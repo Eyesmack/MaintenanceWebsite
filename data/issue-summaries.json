@@ -381,5 +381,6 @@
   "472": "My blog was temporarily unreachable due to a connection issue, starting from 8:41 UTC. I was able to resolve the problem and it was back up by 8:47 UTC. (Summarised by AI, details may not be accurate)",
   "474": "My homepage was temporarily unreachable due to an unknown issue, starting at 8:44 UTC on October 25, 2026. I was able to restore access to the site by 8:53 UTC on the same day. (Summarised by AI, details may not be accurate)",
   "475": "My blog was temporarily unavailable due to a connection issue, but it's now working normally. The problem lasted for about 5 minutes. The issue is resolved. (Summarised by AI, details may not be accurate)",
-  "473": "My website was temporarily unavailable starting around 8:44 UTC on October 25, 2026. I was able to resolve the issue and it's back online as of 8:55 UTC. The outage lasted about 11 minutes. (Summarised by AI, details may not be accurate)"
+  "473": "My website was temporarily unavailable starting around 8:44 UTC on October 25, 2026. I was able to resolve the issue and it's back online as of 8:55 UTC. The outage lasted about 11 minutes. (Summarised by AI, details may not be accurate)",
+  "477": "My phpMyAdmin service was temporarily unavailable, but it's now working again. The issue was resolved at 08:55 UTC on October 25, 2026. It was a brief outage. (Summarised by AI, details may not be accurate)"
 }
