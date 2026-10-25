@@ -71,12 +71,30 @@ function renderMonthlySummary(appIds, downEventsByApp, months, now, monitoringSt
       // already past that app's own start.
       const monitoringStart = getMonitoringStart(app, monitoringStartByApp);
       const monitoredStart = new Date(Math.max(monthStart.getTime(), monitoringStart.getTime()));
+      const cell = document.createElement('td');
+      // A month that ended before this app's monitoring began has nothing
+      // to report — shown as a dash rather than a misleading 100%.
+      if (monitoredStart >= monthEnd) {
+        cell.innerHTML = '<span class="st-cell-down">—</span>';
+        cell.style.textAlign = 'center';
+        row.appendChild(cell);
+        continue;
+      }
       const downtimeMs = getDowntimeMs(issues, monitoredStart, monthEnd, app);
       const percent = calculateUptimePercent(issues, monitoredStart, monthEnd, app);
-      const cell = document.createElement('td');
-      cell.textContent = downtimeMs > 0
-        ? `${formatDuration(downtimeMs)} (${percent.toFixed(2)}%)`
-        : `No downtime (${percent.toFixed(2)}%)`;
+
+      // Same colour bands as the uptime bars (common.js renderUptimeStrip).
+      const tile = document.createElement('span');
+      tile.className = 'st-cell';
+      tile.dataset.state = downtimeMs <= 0 ? 'up' : percent >= 99 ? 'degraded' : 'down';
+      const pct = document.createElement('span');
+      pct.className = 'st-cell-pct';
+      pct.textContent = `${percent.toFixed(2)}%`;
+      const down = document.createElement('span');
+      down.className = 'st-cell-down';
+      down.textContent = downtimeMs > 0 ? `${formatDuration(downtimeMs)} down` : 'No downtime';
+      tile.append(pct, down);
+      cell.appendChild(tile);
       row.appendChild(cell);
     }
 
@@ -111,14 +129,20 @@ function renderIncidentMonths(recentIssues, months, summariesByIssue) {
     if (!entries || !entries.length) continue;
     hasAny = true;
 
-    const heading = document.createElement('h5');
-    heading.className = 'text mt-4 mb-3';
+    const group = document.createElement('div');
+    group.className = 'st-month';
+    const heading = document.createElement('h2');
+    heading.className = 'st-month-title';
     heading.textContent = getMonthLabel(year, month);
-    container.appendChild(heading);
+    const count = document.createElement('span');
+    count.className = 'st-section-note';
+    count.textContent = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`;
+    heading.appendChild(count);
 
     const accordion = document.createElement('div');
     accordion.className = 'accordion incident-accordion';
-    container.appendChild(accordion);
+    group.append(heading, accordion);
+    container.appendChild(group);
     renderIssueAccordion(accordion, entries, summariesByIssue);
   }
 
@@ -217,7 +241,6 @@ function focusIncidentFromHash() {
 
 async function init() {
   document.getElementById('version-text').textContent = VERSION_NUMBER;
-  document.getElementById('version-text-top').textContent = VERSION_NUMBER;
 
   const apps = await loadApps();
   const appIds = Object.keys(apps);

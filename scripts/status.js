@@ -2,9 +2,9 @@
 // <title> stays the single source of truth for the page's base title.
 const BASE_TITLE = document.title;
 
-// Matches the hex values behind Bootstrap's bg-success/bg-warning/bg-danger,
-// so the favicon dot's colors stay consistent with the card badges.
-const FAVICON_COLORS = { operational: '#198754', partial: '#ffc107', down: '#dc3545' };
+// Same values as style.css's --st-up/--st-warn/--st-down/--st-maint, so the
+// favicon dot matches the hero and the service chips.
+const FAVICON_COLORS = { operational: '#22c55e', partial: '#f59e0b', down: '#ef4444', maintenance: '#288ef9' };
 let faviconDataUrlCache = {};
 
 // loadApps, GITHUB_REPO, GITHUB_PROXY_BASE, MONITORING_START_DATE,
@@ -34,16 +34,20 @@ const UPTIME_HISTORY_DAYS = 30;
 // Matches the workflow's hourly sampling cadence for latency-history.json.
 const LATENCY_HISTORY_HOURS = 24;
 
+// The row's data-state colours its dot and chip together (style.css).
+// "degraded" = reachable, but with an open notice filed against it.
 function setBadge(col, online, hasIssue, inMaintenance) {
   const badge = col.querySelector('[data-badge]');
+  let state;
   if (inMaintenance) {
+    state = 'maintenance';
     badge.textContent = 'Maintenance';
-    badge.className = 'badge rounded-pill bg-info';
-    return;
+  } else {
+    state = !online ? 'down' : hasIssue ? 'degraded' : 'up';
+    badge.textContent = online ? (hasIssue ? 'Notice' : 'Operational') : 'Offline';
   }
-  badge.textContent = online ? 'Online' : 'Offline';
-  const badgeClass = online && hasIssue ? 'bg-warning' : online ? 'bg-success' : 'bg-danger';
-  badge.className = `badge rounded-pill ${badgeClass}`;
+  col.dataset.state = state;
+  badge.dataset.state = state;
 }
 
 // Shows the most recent open issue's title for this app (if any),
@@ -64,16 +68,19 @@ function setMessage(col, online, issues) {
     return;
   }
 
-  message.textContent = online
-    ? 'This service has no known issues or planned maintenance.'
-    : 'This service is currently unreachable according to automated checks.';
+  // A healthy service needs no message — the empty element hides itself.
+  message.textContent = online ? '' : 'Unreachable according to automated checks.';
 }
 
-function getOverallState(onlineFlags) {
-  const onlineCount = onlineFlags.filter(Boolean).length;
-  if (onlineCount === onlineFlags.length) return 'operational';
-  if (onlineCount === 0) return 'down';
-  return 'partial';
+// Only real outages count towards partial/down — a service inside an
+// announced maintenance window is expected to be away, so the page says
+// "maintenance" rather than "everything appears to be down".
+function getOverallState(appIds, hasOpenAutoOutage, inMaintenance) {
+  const outageCount = appIds.filter((app) => hasOpenAutoOutage[app] && !inMaintenance[app]).length;
+  if (outageCount && outageCount === appIds.length) return 'down';
+  if (outageCount) return 'partial';
+  if (appIds.some((app) => inMaintenance[app])) return 'maintenance';
+  return 'operational';
 }
 
 function buildFaviconDataUrl(color) {
@@ -95,110 +102,120 @@ function buildFaviconDataUrl(color) {
 // states — reserved for "something needs your attention".
 function updateFaviconAndTitle(state) {
   document.getElementById('favicon').href = buildFaviconDataUrl(FAVICON_COLORS[state]);
-  const prefix = state === 'down' ? 'Full Outage | ' : state === 'partial' ? 'Partial Outage | ' : '';
+  const prefix = { down: 'Full Outage | ', partial: 'Partial Outage | ', maintenance: 'Maintenance | ' }[state] || '';
   document.title = `${prefix}${BASE_TITLE}`;
 }
 
-function updateHeading(state) {
-  const heading = document.getElementById('status-heading');
-  const subheading = document.getElementById('status-subheading');
+// Hero copy and icon per overall state; the hero's data-state colours it.
+const HERO = {
+  operational: {
+    data: 'up',
+    title: 'All systems operational',
+    sub: 'Everything is up and running normally.',
+    icon: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  },
+  partial: {
+    data: 'degraded',
+    title: 'Partial outage',
+    sub: 'Some services are currently unreachable. Details are below.',
+    icon: '<path d="M12 7v6"/><path d="M12 17h.01"/>',
+  },
+  down: {
+    data: 'down',
+    title: "We'll be right back",
+    sub: "Everything appears to be down. I'm looking into it — thanks for your patience!",
+    icon: '<path d="M7 7l10 10"/><path d="M17 7L7 17"/>',
+  },
+  maintenance: {
+    data: 'maintenance',
+    title: 'Scheduled maintenance',
+    sub: 'Planned work is underway, so some services may be slow or unavailable for a while.',
+    icon: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"/>',
+  },
+};
 
-  if (state === 'operational') {
-    heading.textContent = 'All Systems Operational';
-    subheading.textContent = 'Everything is up and running normally.';
-  } else if (state === 'down') {
-    heading.textContent = "We'll be right back";
-    subheading.textContent = "Everything appears to be down. I'm looking into it — thanks for your patience!";
-  } else {
-    heading.textContent = 'Partial Outage';
-    subheading.textContent = 'Some services are currently unreachable. Check the status below for details.';
-  }
+function updateHeading(state) {
+  const hero = HERO[state];
+  document.getElementById('status-hero').dataset.state = hero.data;
+  document.getElementById('status-hero-icon').innerHTML =
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${hero.icon}</svg>`;
+  document.getElementById('status-heading').textContent = hero.title;
+  document.getElementById('status-subheading').textContent = hero.sub;
 }
 
-// Builds one status card per entry in apps.json, so adding or removing
-// an app there is all it takes to add or remove it from the page. `app` is
-// the app's id (see common.js's loadApps) — the card is keyed by it, and
-// only the visible link text uses the display name.
+// Builds one service row per entry in apps.json, so adding or removing an
+// app there is all it takes to add or remove it from the page. `app` is the
+// app's id (see common.js's loadApps) — the row is keyed by it, and only
+// the visible link text uses the display name. The data-* hooks are what
+// the refresh loop fills in; the layout itself is style.css's .st-service.
 function createStatusCard(app) {
-  const col = document.createElement('div');
-  col.className = 'col';
+  const col = document.createElement('article');
+  col.className = 'st-service';
   col.dataset.app = app;
+  col.dataset.state = 'checking';
 
-  const card = document.createElement('div');
-  card.className = 'card sub-card h-100 text-center';
-  const body = document.createElement('div');
-  body.className = 'card-body pb-0';
+  const id = document.createElement('div');
+  id.className = 'st-service-id';
+  const dot = document.createElement('span');
+  dot.className = 'st-dot';
+  dot.setAttribute('aria-hidden', 'true');
 
-  const title = document.createElement('h5');
-  title.className = 'card-title text';
+  const text = document.createElement('div');
+  text.className = 'min-w-0';
+  const title = document.createElement('h3');
+  title.className = 'st-service-name';
   const nameLink = document.createElement('a');
   nameLink.href = `app?app=${encodeURIComponent(app)}`;
-  nameLink.className = 'app-name-link';
   nameLink.textContent = getAppName(app);
-  title.append(nameLink, ' ');
   const badge = document.createElement('span');
-  badge.className = 'badge rounded-pill bg-secondary';
+  badge.className = 'st-chip';
   badge.dataset.badge = '';
+  badge.dataset.state = 'checking';
   badge.textContent = 'Checking…';
-  title.appendChild(badge);
+  title.append(nameLink, badge);
 
   const message = document.createElement('p');
-  message.className = 'card-text text';
+  message.className = 'st-service-msg';
   message.dataset.message = '';
+  text.append(title, message);
+  id.append(dot, text);
 
-  const uptimeRow = document.createElement('div');
-  uptimeRow.className = 'd-flex justify-content-between align-items-center gap-2 mt-2';
-
-  const uptimeText = document.createElement('p');
-  uptimeText.className = 'card-text text small mb-0';
+  // Fixed 30-day strip, with the selected-timeframe uptime % in its caption.
+  const bars = document.createElement('div');
+  bars.className = 'st-service-bars';
+  const uptimeHistory = document.createElement('div');
+  uptimeHistory.className = 'st-bars';
+  uptimeHistory.dataset.uptimeHistory = '';
+  const barsMeta = document.createElement('div');
+  barsMeta.className = 'st-bars-meta';
+  const uptimeText = document.createElement('span');
   uptimeText.dataset.uptime = '';
   uptimeText.textContent = 'Calculating…';
+  barsMeta.append(document.createElement('span'), uptimeText, document.createElement('span'));
+  barsMeta.firstChild.textContent = '30 days ago';
+  barsMeta.lastChild.textContent = 'Today';
+  bars.append(uptimeHistory, barsMeta);
 
-  uptimeRow.append(uptimeText);
-
-  const uptimeHistoryLabel = document.createElement('p');
-  uptimeHistoryLabel.className = 'small text mb-1 mt-2';
-  uptimeHistoryLabel.textContent = 'Uptime History (Last 30 Days)';
-
-  const uptimeHistory = document.createElement('div');
-  uptimeHistory.className = 'd-flex gap-1';
-  uptimeHistory.style.height = '18px';
-  uptimeHistory.dataset.uptimeHistory = '';
-
-  // Hidden until this app has at least one recorded sample — the hourly
-  // workflow run that populates latency-history.json won't have landed
-  // yet right after this ships, so there's nothing to chart initially.
+  // Hidden until this app has at least one recorded sample (see
+  // renderLatencyHistory). A bare canvas has no intrinsic block height,
+  // so it needs a sized parent.
   const latencySection = document.createElement('div');
+  latencySection.className = 'st-service-spark';
   latencySection.dataset.latencySection = '';
-  latencySection.className = 'd-none';
-
-  const latencyLabel = document.createElement('p');
-  latencyLabel.className = 'small text mb-1 mt-2';
-  latencyLabel.textContent = 'Response Time (Last 24 Hours)';
-
-  // A bare canvas has no intrinsic block height, so it needs a sized
-  // parent — same reasoning uptimeHistory.style.height uses above.
+  latencySection.style.visibility = 'hidden';
   const latencyHistoryWrap = document.createElement('div');
-  latencyHistoryWrap.style.height = '40px';
+  latencyHistoryWrap.className = 'st-spark-wrap';
   const latencyHistory = document.createElement('canvas');
   latencyHistory.dataset.latencyHistory = '';
+  latencyHistory.setAttribute('aria-label', 'Response time, last 24 hours');
   latencyHistoryWrap.appendChild(latencyHistory);
+  const latencyLabel = document.createElement('div');
+  latencyLabel.className = 'st-spark-label';
+  latencyLabel.dataset.latencyLabel = '';
+  latencyLabel.textContent = 'Response · 24h';
+  latencySection.append(latencyHistoryWrap, latencyLabel);
 
-  latencySection.append(latencyLabel, latencyHistoryWrap);
-
-  body.append(title, message);
-
-  // A card-footer (not just another card-body child) so it sits pinned to
-  // the bottom of the card regardless of how tall the message above it
-  // is — .card is already a flex column and .card-body already grows to
-  // fill the remaining space, so a following .card-footer naturally lands
-  // at the bottom. Same pattern already used for the page's own footer.
-  const cardFooter = document.createElement('div');
-  cardFooter.className = 'card-footer border-top-0 pt-0';
-  cardFooter.append(uptimeRow, uptimeHistoryLabel, uptimeHistory, latencySection);
-
-  card.append(body, cardFooter);
-  col.appendChild(card);
+  col.append(id, bars, latencySection);
   return col;
 }
 
@@ -223,13 +240,11 @@ function createUptimeTimeframeSelector() {
 
   const label = document.createElement('label');
   label.htmlFor = 'uptime-timeframe-select';
-  label.className = 'small text mb-0';
-  label.textContent = 'Uptime% Timeframe:';
+  label.textContent = 'Uptime over';
 
   const select = document.createElement('select');
   select.id = 'uptime-timeframe-select';
-  select.className = 'form-select form-select-sm';
-  select.style.width = 'auto';
+  select.className = 'form-select form-select-sm st-select';
   for (const [key, { label: optionLabel }] of Object.entries(UPTIME_TIMEFRAMES)) {
     const option = document.createElement('option');
     option.value = key;
@@ -298,7 +313,10 @@ function renderUptime(app) {
   const { label } = UPTIME_TIMEFRAMES[timeframeKey];
   const [windowStart, windowEnd] = getUptimeWindow(timeframeKey, new Date(), app);
   const percent = calculateUptimePercent(cachedDownEventsByApp[app] || [], windowStart, windowEnd, app);
-  text.textContent = `${percent.toFixed(2)}% uptime (${label})`;
+  text.innerHTML = '';
+  const strong = document.createElement('strong');
+  strong.textContent = `${percent.toFixed(2)}%`;
+  text.append(strong, ` uptime · ${label.toLowerCase()}`);
 }
 
 // One listener on the single shared selector, rather than one per card —
@@ -330,14 +348,16 @@ function renderLatencyHistory(app) {
 
   const samples = (cachedLatencyByApp[app] || []).slice(-LATENCY_HISTORY_HOURS);
   if (!samples.length) {
-    section.classList.add('d-none');
+    section.style.visibility = 'hidden';
     return;
   }
 
   const labels = samples.map((s) => formatTimestamp(s.t));
   const values = samples.map((s) => s.ms);
   renderLatencyChart(canvas, labels, values, { compact: true });
-  section.classList.remove('d-none');
+  const latest = values[values.length - 1];
+  col.querySelector('[data-latency-label]').textContent = `${Math.round(latest)}ms · last 24h`;
+  section.style.visibility = '';
 }
 
 // formatTimestamp, formatDuration, and calculateUptimePercent now live in
@@ -430,13 +450,12 @@ async function refreshAppStatus() {
     renderLatencyHistory(app);
   });
 
-  const state = getOverallState(cachedAppIds.map((app) => onlineByApp[app]));
+  const state = getOverallState(cachedAppIds, hasOpenAutoOutage, inMaintenance);
   updateHeading(state);
   updateFaviconAndTitle(state);
   updateRecentUpdates(recentIssues);
 
-  document.getElementById('last-updated').textContent =
-    `Last updated: ${formatTimestamp(new Date())} · ${VERSION_NUMBER}`;
+  document.getElementById('last-updated').textContent = `Last updated ${formatTimestamp(new Date())}`;
 
   lastUpdatedAt = new Date();
   secondsUntilRefresh = REFRESH_INTERVAL_MS / 1000;

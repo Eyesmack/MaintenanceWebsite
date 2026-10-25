@@ -3,51 +3,95 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1220">
     <title>Status | Isaac Mason</title>
+    <meta name="description" content="Live status, uptime and incident history for Isaac's self-hosted services.">
     <link rel="icon" id="favicon" href="">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <link rel="stylesheet" href="style.css">
   </head>
-  <body>
-    <div class="container py-5">
-      <div class="row justify-content-center">
-        <div class="col-12 col-md-11">
-          <div class="card home-card shadow-lg p-4 pt-0 text-center">
-            <div class="card-header">
-              <small><span class="version-text" id="version-text"><p class="card-text placeholder-glow"><span class="placeholder col-1"></span></p></span></small>
-            </div>
-            <div class="card-body">
-			        <h1 class="text" id="status-heading">Checking status <div class="spinner-border text-secondary" role="status"><span class="visually-hidden">Loading...</span></div></h1>
-              <p class="lead mb-4 text" id="status-subheading">Checking each service, please wait.</p>
-              <div class="d-flex justify-content-between align-items-center gap-2 mb-0">
-                <small id="header-last-updated" class="version-text"></small>
-                <div class="d-flex align-items-center gap-2" id="uptime-timeframe-row"></div>
-              </div>
-              <div class="row row-cols-1 row-cols-md-2 g-3 mt-1" id="status-cards"></div>
-              <div id="recent-updates" class="mt-4 text-start d-none">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                  <h5 class="text mb-0">Recent Events <span style="font-size:13px;"><a href="history" class="version-text">(Full Incident History)</a></span></h5>
-                  <select id="recent-updates-count" class="form-select form-select-sm" style="width: auto;">
-                    <option value="5" selected>Last 5</option>
-                    <option value="10">Last 10</option>
-                  </select>
-                </div>
-                <div id="recent-updates-list"></div>
-              </div>
-              <!--
-              <div class="d-grid gap-3 d-sm-flex justify-content-center flex-wrap">
-                  <a href="https://isaacmason.co.nz" rel="noopener" class="btn btn-outline-light btn-lg btn-custom">Go Back</a>
-              </div>
-              -->
-            </div>
-            <div class="card-footer version-text">
-              <small id="last-updated"><p class="card-text placeholder-glow"><span class="placeholder col-4"></span></p></small>
-              <small> · <a href="history" class="version-text">Incident History</a></small>
-            </div>
+  <body id="top">
+    <header class="site-header" data-bs-theme="dark">
+      <div class="container site-header-inner">
+        <a class="site-logo" href="./" aria-label="Isaac's Index status home">
+          <img src="assets/logo-header.png" alt="Isaac's Index" class="site-logo-img">
+          <span class="site-logo-tag">Status</span>
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <a href="./" class="active" aria-current="page">Overview</a>
+          <a href="history">History</a>
+          <a href="https://blog.isaacmason.co.nz" rel="noopener">Blog <span aria-hidden="true">&nearr;</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container st-page" data-bs-theme="dark">
+      <section class="st-hero" id="status-hero" data-state="checking" aria-live="polite">
+        <div class="st-hero-icon" id="status-hero-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+        </div>
+        <div class="st-hero-text">
+          <h1 class="st-hero-title" id="status-heading">Checking status…</h1>
+          <p class="st-hero-sub" id="status-subheading">Checking each service, please wait.</p>
+        </div>
+        <div class="st-hero-meta" id="header-last-updated"></div>
+      </section>
+
+      <section class="st-section" aria-labelledby="services-title">
+        <div class="st-section-head">
+          <h2 class="st-section-title" id="services-title">Services <span class="st-section-note">Checked every minute</span></h2>
+          <div class="st-control" id="uptime-timeframe-row"></div>
+        </div>
+        <div class="st-panel st-services" id="status-cards"></div>
+      </section>
+
+      <section class="st-section d-none" id="recent-updates" aria-labelledby="recent-title">
+        <div class="st-section-head">
+          <h2 class="st-section-title" id="recent-title">Recent events</h2>
+          <div class="st-control">
+            <label for="recent-updates-count" class="visually-hidden">How many events to show</label>
+            <select id="recent-updates-count" class="form-select form-select-sm st-select">
+              <option value="5" selected>Last 5</option>
+              <option value="10">Last 10</option>
+            </select>
+            <a href="history" class="st-link-quiet">Full history &rarr;</a>
           </div>
         </div>
+        <div class="st-timeline" id="recent-updates-list"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer" data-bs-theme="dark">
+      <div class="container">
+        <div class="site-footer-grid">
+          <div class="site-footer-brand">
+            <a href="./" class="site-footer-title">Isaac's Index &middot; Status</a>
+            <p class="site-footer-about">Live status for the services I run on my home server. Every service is checked once a minute by GitHub Actions, and outages are logged as GitHub issues.</p>
+          </div>
+          <nav class="site-footer-col" aria-label="Status">
+            <h2>Status</h2>
+            <ul>
+              <li><a href="./">Overview</a></li>
+              <li><a href="history">Incident history</a></li>
+              <li><a href="https://github.com/Eyesmack/MaintenanceWebsite/issues" rel="noopener" target="_blank">Issues on GitHub</a></li>
+            </ul>
+          </nav>
+          <nav class="site-footer-col" aria-label="Elsewhere">
+            <h2>Elsewhere</h2>
+            <ul>
+              <li><a href="https://blog.isaacmason.co.nz" rel="noopener">Blog</a></li>
+              <li><a href="https://blog.isaacmason.co.nz/support" rel="noopener">Support</a></li>
+              <li><a href="https://isaacmason.co.nz" rel="noopener">Homepage</a></li>
+            </ul>
+          </nav>
+        </div>
+        <div class="site-footer-bottom">
+          <span><span id="last-updated">Loading…</span> &middot; <span id="version-text"></span></span>
+          <a href="#top" class="site-footer-top">Back to top <span aria-hidden="true">&uarr;</span></a>
+        </div>
       </div>
-    </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="scripts/common.js"></script>

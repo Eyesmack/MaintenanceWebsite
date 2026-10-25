@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v1.24.0';
+const VERSION_NUMBER = 'v2.0.0';
 
 // apps.json ({ "<id>": { name, url } }) is shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth. The
@@ -368,25 +368,25 @@ async function preloadIssueComments(container, issues) {
 
       const list = document.createElement('div');
       list.dataset.comments = '';
-      list.className = 'mt-2';
+      list.className = 'st-updates';
 
       const label = document.createElement('p');
-      label.className = 'small opacity-75 mb-1 text';
-      label.textContent = 'Updates:';
+      label.className = 'st-label';
+      label.textContent = `Updates (${comments.length})`;
       list.appendChild(label);
 
       for (const comment of comments) {
         const wrap = document.createElement('div');
-        wrap.className = 'comment-box p-2 mb-2';
+        wrap.className = 'st-update';
 
         const edited = comment.updated_at !== comment.created_at;
         const meta = document.createElement('p');
-        meta.className = 'small opacity-75 mb-0 text';
+        meta.className = 'st-update-meta';
         meta.textContent = `${comment.user?.login || 'unknown'} · ${formatTimestamp(edited ? comment.updated_at : comment.created_at)}${edited ? ' (edited)' : ''}`;
 
         // A div, not a <p> — same reasoning as the description below.
         const commentBody = document.createElement('div');
-        commentBody.className = 'markdown-body mb-0 text';
+        commentBody.className = 'markdown-body';
         if (comment.body_html) {
           commentBody.innerHTML = comment.body_html;
         } else {
@@ -448,13 +448,67 @@ function fingerprintRecentIssues(recentIssues) {
   return recentIssues.map(({ issue }) => `${issue.number}:${issue.state}:${issue.updated_at}`).join('|');
 }
 
+// Small DOM helper for the renderers below — `el('span', 'st-chip', 'Open')`.
+// textContent only, never innerHTML, so issue titles etc. are always inert.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// A state chip (style.css's .st-chip, coloured by data-state).
+function stateChip(state, text) {
+  const chip = el('span', 'st-chip', text);
+  chip.dataset.state = state;
+  return chip;
+}
+
+// What kind of entry this is, as [data-state, label]: planned maintenance
+// reads in the accent colour, a real incident in red.
+function eventKind(isUpdate) {
+  return isUpdate ? ['maintenance', 'Maintenance'] : ['down', 'Incident'];
+}
+
+// An open entry's live state, as [data-state, label]. A planned notice is
+// "In progress" only while now is inside its declared window, "Scheduled"
+// before it, and plain "Planned" when it declares no window at all.
+function openEventState(issue, isUpdate) {
+  if (!isUpdate) return ['down', 'Ongoing'];
+  const window = extractMaintenanceWindow(issue.body);
+  if (!window) return ['maintenance', 'Planned'];
+  const now = new Date();
+  if (now < window.start) return ['maintenance', 'Scheduled'];
+  if (now <= window.end) return ['maintenance', 'In progress'];
+  return ['maintenance', 'Overrunning'];
+}
+
+// The affected apps as small pills.
+function renderAppPills(apps) {
+  const list = el('ul', 'st-event-apps');
+  list.setAttribute('aria-label', 'Affected services');
+  for (const app of apps) list.appendChild(el('li', '', getAppName(app)));
+  return list;
+}
+
+function githubLink(issue) {
+  const link = el('a', '', 'View on GitHub ↗');
+  link.href = issue.html_url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  return link;
+}
+
 // Builds an accordion of { apps, issue, isUpdate } entries into the given
 // container — no count/slicing/empty-check logic here, callers pass
 // exactly what should render and skip calling this at all when there's
 // nothing to show (history.js's per-month loop only ever calls this for
 // months that already have ≥1 entry). Callers can invoke this multiple
 // times against different containers in the same page load (one per
-// month) — each call only touches its own `accordion` element.
+// month) — each call only touches its own `accordion` element. Keeps
+// Bootstrap's accordion classes (collapse JS, plus history.js's deep-link
+// expand and the open-state capture below depend on them); style.css
+// replaces their look.
 function renderIssueAccordion(accordion, issues, summariesByIssue) {
   // Capture which items are currently expanded so the rebuild below (which
   // happens on every fingerprint change from the auto-refresh loop, not
@@ -471,85 +525,47 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
   for (const { apps, issue, isUpdate } of issues) {
     const collapseId = `ru-collapse-${issue.number}`;
 
-    const item = document.createElement('div');
-    item.className = 'accordion-item';
+    const item = el('div', 'accordion-item');
     item.id = `incident-${issue.number}`;
     item.dataset.issueNumber = String(issue.number);
 
-    // A flex row: the toggle button (still the only click target for
-    // expand/collapse) plus a separate link icon after it. The link can't
-    // live inside the button itself — nested interactive elements are
-    // invalid HTML and the click would also toggle the accordion.
-    const header = document.createElement('h2');
-    header.className = 'accordion-header d-flex align-items-center';
+    // The toggle button and the GitHub link sit side by side — the link
+    // can't live inside the button (nested interactive elements are
+    // invalid HTML, and the click would also toggle the accordion).
+    const header = el('h3', 'accordion-header');
 
-    const button = document.createElement('button');
-    button.className = 'accordion-button collapsed flex-grow-1';
+    const button = el('button', 'accordion-button collapsed');
     button.type = 'button';
     button.setAttribute('data-bs-toggle', 'collapse');
     button.setAttribute('data-bs-target', `#${collapseId}`);
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', collapseId);
 
-    const titleWrap = document.createElement('span');
-    titleWrap.className = 'd-flex justify-content-between align-items-center w-100 gap-2';
-    const titleText = document.createElement('span');
-    titleText.append(`${issue.title} - `);
-    const titleTimestamp = document.createElement('span');
-    titleTimestamp.className = 'opacity-75';
-    titleTimestamp.textContent = shortTimestampText(issue, isUpdate);
-    titleText.appendChild(titleTimestamp);
+    // A closed planned-maintenance issue still reads as Maintenance — the
+    // kind of entry matters more in the archive than its (always
+    // resolved) state; an open one shows its live state instead.
+    const [chipState, chipText] = issue.state === 'open' ? openEventState(issue, isUpdate) : eventKind(isUpdate);
+    button.append(
+      stateChip(chipState, chipText),
+      el('span', 'st-acc-title', issue.title),
+      el('span', 'st-acc-time', shortTimestampText(issue, isUpdate))
+    );
 
-    const stateBadge = document.createElement('span');
-    if (isUpdate && issue.state === 'open') {
-      stateBadge.className = 'badge bg-info me-2';
-      stateBadge.textContent = 'Planned';
-    } else {
-      // A closed planned-maintenance issue is just Resolved, same as any
-      // other closed issue — "Planned" only makes sense while it's open.
-      stateBadge.className = `badge me-2 ${issue.state === 'open' ? 'bg-danger' : 'bg-success'}`;
-      stateBadge.textContent = issue.state === 'open' ? 'Open' : 'Resolved';
-    }
-    titleWrap.append(titleText, stateBadge);
-    button.appendChild(titleWrap);
-
-    const issueLink = document.createElement('a');
+    const issueLink = el('a', 'st-acc-link', '↗');
     issueLink.href = issue.html_url;
     issueLink.target = '_blank';
     issueLink.rel = 'noopener';
-    issueLink.className = 'accordion-link-btn ms-2 me-2';
     issueLink.title = 'View on GitHub';
     issueLink.setAttribute('aria-label', 'View issue on GitHub');
-    issueLink.textContent = '↗';
 
     header.append(button, issueLink);
 
     // No data-bs-parent: "Always Open" accordion — expanding one item
     // doesn't collapse the others.
-    const collapse = document.createElement('div');
+    const collapse = el('div', 'accordion-collapse collapse');
     collapse.id = collapseId;
-    collapse.className = 'accordion-collapse collapse';
 
-    const collapseBody = document.createElement('div');
-    collapseBody.className = 'accordion-body incident-body';
-
-    const affectedApps = document.createElement('p');
-    affectedApps.className = 'small opacity-75 mb-2';
-    affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
-
-    const summaryHeading = document.createElement('h6');
-    summaryHeading.className = 'small text-uppercase opacity-75 mb-1';
-    summaryHeading.textContent = 'Incident Summary';
-
-    const summaryText = document.createElement('p');
-    summaryText.className = 'mb-3';
-    summaryText.textContent = summariesByIssue[issue.number] || 'Summary pending…';
-
-    const horizontalLineBreak = document.createElement('hr');
-
-    const initialPostHeading = document.createElement('h6');
-    initialPostHeading.className = 'small text-uppercase opacity-75 mb-1';
-    initialPostHeading.textContent = 'Initial Post';
+    const collapseBody = el('div', 'accordion-body incident-body');
 
     // A div, not a <p> — body_html can contain block-level content
     // (lists, code blocks, multiple paragraphs), which a <p> can't
@@ -557,21 +573,26 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
     // block element). Falls back to plain text (not innerHTML) when
     // body_html isn't present, so raw markdown source is never
     // accidentally parsed as HTML.
-    const description = document.createElement('div');
+    const description = el('div', 'markdown-body mb-3');
     description.dataset.description = '';
-    description.className = 'markdown-body';
     if (issue.body_html) {
       description.innerHTML = issue.body_html;
     } else {
       description.textContent = issue.body || 'No further details provided.';
     }
 
-    const timestamp = document.createElement('p');
+    const timestamp = el('p', 'st-muted small mb-0', timestampText(issue, isUpdate));
     timestamp.dataset.timestamp = '';
-    timestamp.className = 'small opacity-75 mb-0';
-    timestamp.textContent = timestampText(issue, isUpdate);
 
-    collapseBody.append(affectedApps, summaryHeading, summaryText, horizontalLineBreak, initialPostHeading, description, timestamp);
+    collapseBody.append(
+      renderAppPills(apps),
+      el('p', 'st-label', 'Summary'),
+      el('p', 'st-event-text', summariesByIssue[issue.number] || 'Summary pending…'),
+      el('hr', 'st-divider'),
+      el('p', 'st-label', 'Original notice'),
+      description,
+      timestamp
+    );
     collapse.appendChild(collapseBody);
 
     if (expandedIssueNumbers.has(String(issue.number))) {
@@ -587,125 +608,73 @@ function renderIssueAccordion(accordion, issues, summariesByIssue) {
   preloadIssueComments(accordion, issues);
 }
 
-// Flat, always-visible card for a resolved incident/maintenance entry —
-// used everywhere a closed issue is shown (index.html's and app.html's
-// Recent Updates lists). Shows the AI-generated summary (from
-// issue-summaries.json, see fetchIssueSummaries) in place of the raw
-// GitHub body — a resolved issue's story is short and settled, so there's
-// no need for the reader to expand anything.
+// Timeline entry for a resolved incident/maintenance entry — used
+// everywhere a closed issue is shown (index.html's and app.html's event
+// lists). Shows the AI-generated summary (from issue-summaries.json, see
+// fetchIssueSummaries) in place of the raw GitHub body — a resolved
+// issue's story is short and settled, so there's no need for the reader
+// to expand anything.
 function renderClosedIncidentCard(entry, summariesByIssue) {
   const { apps, issue, isUpdate } = entry;
   const [start, end] = resolveIssueInterval(issue, new Date());
+  const [kindState, kindText] = eventKind(isUpdate);
 
-  const item = document.createElement('div');
-  item.className = 'sub-card rounded p-3 mb-3';
-
-  // .text lives on this row, not the title link itself — app-name-link's
-  // `color: inherit` needs a .text-colored ancestor to pick up (same
-  // pattern as the app-name link on each status card's <h5 class="text">).
-  // Putting .text and .app-name-link on the very same element would let
-  // app-name-link's `color: inherit` (declared after .text in style.css,
-  // so it wins the cascade) shadow .text's color and fall through to
-  // Bootstrap's default body text color instead — unreadable against this
-  // dark background.
-  const titleRow = document.createElement('div');
-  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2 text';
+  const item = el('article', 'st-event');
+  item.dataset.state = kindState;
 
   // Links to this incident's entry in its month's accordion on
-  // history.html (see renderIssueAccordion's matching item.id) — both the
-  // title and the "View full incident" link below point at the same
-  // anchor, just as two different click targets on the same card.
+  // history.html (see renderIssueAccordion's matching item.id).
   const historyHref = `history#incident-${issue.number}`;
 
-  const title = document.createElement('a');
-  title.className = 'fw-semibold app-name-link';
+  const head = el('div', 'st-event-head');
+  head.append(stateChip(kindState, kindText), stateChip('up', 'Resolved'), el('span', 'st-event-time', formatTimestamp(start)));
+
+  const title = el('a', 'st-event-title', issue.title);
   title.href = historyHref;
-  title.textContent = issue.title;
-
-  const badge = document.createElement('span');
-  badge.className = `badge ${isUpdate ? 'bg-info' : 'bg-secondary'}`;
-  badge.textContent = isUpdate ? 'Maintenance' : 'Incident';
-
-  titleRow.append(title, badge);
-
-  const affectedApps = document.createElement('p');
-  affectedApps.className = 'small opacity-75 mb-1 text';
-  affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
 
   // A closed issue this feature shipped after (or one Workers AI hasn't
   // gotten to yet — the summarize-incident.yml run lands within seconds
   // of closing, but isn't instant) has no summary yet; say so rather than
   // showing nothing.
-  const summary = document.createElement('p');
-  summary.className = 'mb-2 text';
-  summary.textContent = summariesByIssue[issue.number] || 'Summary pending…';
+  const summary = el('p', 'st-event-text', summariesByIssue[issue.number] || 'Summary pending…');
 
-  const timing = document.createElement('p');
-  timing.className = 'small opacity-75 mb-2 text';
-  timing.textContent = `${formatTimestamp(start)} — ${formatTimestamp(end)} (${formatDuration(end - start)})`;
-
-  const links = document.createElement('div');
-  links.className = 'd-flex gap-3';
-
-  const fullIncidentLink = document.createElement('a');
+  const foot = el('div', 'st-event-foot');
+  const duration = el('span', 'st-event-duration', `${isUpdate ? 'Lasted' : 'Down for'} ${formatDuration(end - start)} · ended ${formatTimestamp(end)}`);
+  const fullIncidentLink = el('a', '', 'Full incident');
   fullIncidentLink.href = historyHref;
-  fullIncidentLink.className = 'small';
-  fullIncidentLink.textContent = 'View full incident';
-  links.appendChild(fullIncidentLink);
+  foot.append(duration, fullIncidentLink, githubLink(issue));
 
-  const ghLink = document.createElement('a');
-  ghLink.href = issue.html_url;
-  ghLink.target = '_blank';
-  ghLink.rel = 'noopener';
-  ghLink.className = 'small';
-  ghLink.textContent = 'View on GitHub ↗';
-  links.appendChild(ghLink);
-
-  item.append(titleRow, affectedApps, summary, timing, links);
+  item.append(head, title, summary, renderAppPills(apps), foot);
   return item;
 }
 
-// Flat, always-visible card for an open/ongoing entry — the "everything an
-// accordion item would show, minus the click-to-expand" version, since an
-// ongoing incident is exactly the thing a visitor doesn't want to have to
-// dig for. `appendComments` controls whether live-appended comments are
-// fetched in (app.html, history.html's Live Incidents — the "real" views);
+// Timeline entry for an open/ongoing entry — everything an accordion item
+// would show, minus the click-to-expand, since an ongoing incident is
+// exactly the thing a visitor doesn't want to have to dig for.
+// `appendComments` controls whether live-appended comments are fetched in
+// (app.html, history.html's live section — the "real" views);
 // `liveIncidentHref`, when given instead, adds a link to that fuller view
-// (index.html's lighter teaser card, pointing at history.html).
+// (index.html's lighter teaser, pointing at history.html).
 // `item.id`/`dataset.issueNumber` are set unconditionally — unused when
-// nothing links here, load-bearing when index.html's "View Live Incident"
-// link needs an anchor to scroll to, and when preloadIssueComments needs
-// to find this card by issue number.
+// nothing links here, load-bearing when index.html's link needs an anchor
+// to scroll to, and when preloadIssueComments needs to find this entry by
+// issue number.
 function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
   const { apps, issue, isUpdate } = entry;
+  const [kindState, kindText] = eventKind(isUpdate);
+  const [liveState, liveText] = openEventState(issue, isUpdate);
 
-  const item = document.createElement('div');
-  item.className = 'sub-card rounded p-3 mb-3';
+  const item = el('article', 'st-event is-live');
+  item.dataset.state = liveState;
   item.id = `incident-${issue.number}`;
   item.dataset.issueNumber = String(issue.number);
 
-  const titleRow = document.createElement('div');
-  titleRow.className = 'd-flex justify-content-between align-items-start gap-2 mb-2';
+  const head = el('div', 'st-event-head');
+  head.append(stateChip(kindState, kindText), stateChip(liveState, liveText));
 
-  const title = document.createElement('span');
-  title.className = 'text fw-semibold';
-  title.textContent = issue.title;
+  const body = el('div', 'incident-body');
 
-  const badge = document.createElement('span');
-  badge.className = `badge ${isUpdate ? 'bg-info' : 'bg-danger'}`;
-  badge.textContent = isUpdate ? 'Planned' : 'Open';
-
-  titleRow.append(title, badge);
-
-  const body = document.createElement('div');
-  body.className = 'incident-body';
-
-  const affectedApps = document.createElement('p');
-  affectedApps.className = 'small opacity-75 mb-1 text';
-  affectedApps.textContent = `Affected Apps: ${apps.map(getAppName).join(', ')}`;
-
-  const description = document.createElement('div');
-  description.className = 'markdown-body mb-2 text';
+  const description = el('div', 'markdown-body mb-3');
   if (issue.body_html) {
     description.innerHTML = issue.body_html;
   } else {
@@ -713,59 +682,46 @@ function renderOpenIncidentCard(entry, { appendComments, liveIncidentHref }) {
   }
 
   // A lightweight comment *count*, shown only where the real comments
-  // themselves aren't (index.html's teaser card, appendComments: false) —
+  // themselves aren't (index.html's teaser, appendComments: false) —
   // reuses `issue.comments`, a count GitHub's issues-list API already
-  // returns on every issue, so this needs no extra fetch. When
-  // appendComments is true, the real comment list below (see
-  // preloadIssueComments) already has its own "Updates:" heading, so this
-  // would just be redundant there.
-  let commentCount = null;
+  // returns on every issue, so this needs no extra fetch.
+  const extras = [];
   if (!appendComments && issue.comments > 0) {
-    commentCount = document.createElement('p');
-    commentCount.className = 'comment-box small d-inline-block px-2 py-1 mb-2 text';
-    commentCount.textContent = `${issue.comments} Update${issue.comments === 1 ? '' : 's'}`;
+    extras.push(el('p', 'st-count', `${issue.comments} update${issue.comments === 1 ? '' : 's'} posted`));
   }
 
-  const timestamp = document.createElement('p');
+  const timestamp = el('p', 'st-muted small mb-0', timestampText(issue, isUpdate));
   timestamp.dataset.timestamp = '';
-  timestamp.className = 'small opacity-75 mb-2 text';
-  timestamp.textContent = timestampText(issue, isUpdate);
 
-  body.append(affectedApps, description, ...(commentCount ? [commentCount] : []), timestamp);
+  body.append(renderAppPills(apps), description, ...extras, timestamp);
 
-  const links = document.createElement('div');
-  links.className = 'd-flex gap-3';
-
+  const foot = el('div', 'st-event-foot mt-3');
+  foot.appendChild(el('span', 'st-event-duration'));
   if (liveIncidentHref) {
-    const liveLink = document.createElement('a');
+    const liveLink = el('a', '', 'Follow live updates');
     liveLink.href = liveIncidentHref;
-    liveLink.className = 'small';
-    liveLink.textContent = 'View Live Incident';
-    links.appendChild(liveLink);
+    foot.appendChild(liveLink);
   }
+  foot.appendChild(githubLink(issue));
 
-  const ghLink = document.createElement('a');
-  ghLink.href = issue.html_url;
-  ghLink.target = '_blank';
-  ghLink.rel = 'noopener';
-  ghLink.className = 'small';
-  ghLink.textContent = 'View on GitHub ↗';
-  links.appendChild(ghLink);
-
-  item.append(titleRow, body, links);
+  item.append(head, el('span', 'st-event-title', issue.title), body, foot);
 
   if (appendComments) preloadIssueComments(item, [entry]);
 
   return item;
 }
 
-// Fixed-length day-by-day history strip shared by status.js's per-card
+// Fixed-length day-by-day history strip shared by status.js's per-service
 // history (30 days) and app.js's single-app history (90 days) — same
 // convention as most status pages (Upptime, UptimeRobot, Cachet). Reuses
-// calculateUptimePercent per day rather than duplicating the downtime math.
-// `appLabel` (optional) is threaded through to calculateUptimePercent — see
+// calculateUptimePercent/getDowntimeMs per day rather than duplicating the
+// downtime math. `appLabel` (optional) is threaded through — see
 // resolveIssueInterval's comment for why a per-app label matters here.
+// A full day is green; any downtime turns it amber (≥99%) or red (<99%).
 function renderUptimeStrip(container, issues, days, monitoringStart, now, appLabel) {
+  // Dispose the previous cycle's tooltips first — a tooltip left showing on
+  // a bar that gets removed would otherwise stay stuck on screen.
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((bar) => bootstrap.Tooltip.getInstance(bar)?.dispose());
   container.innerHTML = '';
   for (let i = days - 1; i >= 0; i--) {
     const dayStart = new Date();
@@ -776,18 +732,21 @@ function renderUptimeStrip(container, issues, days, monitoringStart, now, appLab
     // passed in) would look like it extends all the way to midnight
     // tonight, i.e. into the future.
     const dayEnd = new Date(Math.min(dayStart.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
+    const dayLabel = dayStart.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
-    const day = document.createElement('div');
-    day.className = 'flex-fill rounded-1';
+    const day = el('div', 'st-bar');
     day.setAttribute('data-bs-toggle', 'tooltip');
 
     if (dayStart < monitoringStart) {
-      day.classList.add('bg-secondary');
-      day.title = `${dayStart.toLocaleDateString()} — No data (before monitoring began)`;
+      day.classList.add('is-none');
+      day.title = `${dayLabel} · No data (before monitoring began)`;
     } else {
       const percent = calculateUptimePercent(issues, dayStart, dayEnd, appLabel);
-      day.classList.add(percent === 100 ? 'bg-success' : 'bg-danger');
-      day.title = `${dayStart.toLocaleDateString()} — ${percent.toFixed(2)}% uptime`;
+      if (percent < 100) day.classList.add(percent >= 99 ? 'is-minor' : 'is-major');
+      const downtimeMs = getDowntimeMs(issues, dayStart, dayEnd, appLabel);
+      day.title = downtimeMs > 0
+        ? `${dayLabel} · ${percent.toFixed(2)}% uptime · ${formatDuration(downtimeMs)} down`
+        : `${dayLabel} · No downtime`;
     }
 
     container.appendChild(day);
@@ -796,20 +755,62 @@ function renderUptimeStrip(container, issues, days, monitoringStart, now, appLab
   // Bootstrap tooltips are opt-in — each trigger element needs its own
   // instance. Its Tooltip JS takes over the `title` attribute (removing it
   // from native-tooltip duty) once initialized.
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => new bootstrap.Tooltip(el));
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((bar) => new bootstrap.Tooltip(bar));
 }
 
 // Shared Chart.js line-chart renderer for response-time data — status.js's
-// per-card mini chart and app.js's full 90-day chart both call this so they
-// render with the same visual language despite different data windows/
-// granularity. Destroys any previous chart on the same canvas first —
-// Chart.js throws "Canvas is already in use" if a second instance is
-// constructed over an old one without disposing it first, which the 60s
-// refresh loop in both callers would otherwise hit on every tick.
+// per-service sparkline and app.js's full 90-day chart both call this so
+// they render with the same visual language despite different data
+// windows/granularity. Destroys any previous chart on the same canvas
+// first — Chart.js throws "Canvas is already in use" if a second instance
+// is constructed over an old one without disposing it first, which the
+// 60s refresh loop in both callers would otherwise hit on every tick.
 const latencyChartInstances = new WeakMap();
+
+// The blog's accent and muted text colours (style.css's --blog-accent and
+// --st-muted) — Chart.js draws on a canvas, so it can't read CSS vars.
+const CHART_ACCENT = '#288ef9';
+const CHART_MUTED = '#8b97a8';
+
+// The overview's sparklines are only ~36px tall, too short for Chart.js's
+// own canvas-drawn tooltip (it gets clipped at the canvas edge) — so they
+// use one shared HTML tooltip instead, positioned over the page.
+let sparkTooltipEl = null;
+
+function sparkTooltip({ chart, tooltip }) {
+  if (!sparkTooltipEl) {
+    sparkTooltipEl = el('div', 'st-chart-tip');
+    sparkTooltipEl.setAttribute('role', 'tooltip');
+    document.body.appendChild(sparkTooltipEl);
+  }
+  if (tooltip.opacity === 0) {
+    sparkTooltipEl.classList.remove('is-visible');
+    return;
+  }
+
+  sparkTooltipEl.replaceChildren(
+    el('div', 'st-chart-tip-title', tooltip.title.join(' ')),
+    el('div', 'st-chart-tip-body', tooltip.body.flatMap((b) => b.lines).join(' '))
+  );
+
+  // Centre above the hovered point, kept inside the viewport.
+  const rect = chart.canvas.getBoundingClientRect();
+  const tipWidth = sparkTooltipEl.offsetWidth;
+  const x = Math.min(Math.max(rect.left + tooltip.caretX - tipWidth / 2, 8), window.innerWidth - tipWidth - 8);
+  sparkTooltipEl.style.left = `${x}px`;
+  sparkTooltipEl.style.top = `${rect.top + tooltip.caretY - sparkTooltipEl.offsetHeight - 10}px`;
+  sparkTooltipEl.classList.add('is-visible');
+}
+
+// A page scroll leaves a fixed-position tooltip behind its point — hide it.
+window.addEventListener('scroll', () => sparkTooltipEl?.classList.remove('is-visible'), { passive: true });
 
 function renderLatencyChart(canvas, labels, values, { compact }) {
   latencyChartInstances.get(canvas)?.destroy();
+
+  const fill = canvas.getContext('2d').createLinearGradient(0, 0, 0, canvas.parentElement.clientHeight || 200);
+  fill.addColorStop(0, 'rgba(40, 142, 249, 0.28)');
+  fill.addColorStop(1, 'rgba(40, 142, 249, 0)');
 
   const chart = new Chart(canvas, {
     type: 'line',
@@ -817,12 +818,13 @@ function renderLatencyChart(canvas, labels, values, { compact }) {
       labels,
       datasets: [{
         data: values,
-        borderColor: '#0dcaf0',
-        backgroundColor: 'rgba(13, 202, 240, 0.15)',
+        borderColor: CHART_ACCENT,
+        backgroundColor: fill,
         fill: true,
-        tension: 0.25,
+        tension: 0.3,
         pointRadius: 0,
-        pointHoverRadius: compact ? 0 : 3,
+        pointHoverRadius: compact ? 2 : 4,
+        pointHoverBackgroundColor: CHART_ACCENT,
         borderWidth: compact ? 1.5 : 2,
         spanGaps: false, // a day/hour with no sample is a real gap, not 0ms
       }],
@@ -834,37 +836,32 @@ function renderLatencyChart(canvas, labels, values, { compact }) {
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => `${Math.round(ctx.parsed.y)}ms` } },
+        tooltip: {
+          enabled: !compact,
+          external: compact ? sparkTooltip : undefined,
+          backgroundColor: '#141b29',
+          borderColor: 'rgba(255, 255, 255, 0.14)',
+          borderWidth: 1,
+          titleColor: '#e2eef6',
+          bodyColor: '#cbd5e1',
+          displayColors: false,
+          padding: 8,
+          callbacks: { label: (ctx) => `${Math.round(ctx.parsed.y)}ms` },
+        },
       },
       scales: {
         x: {
           display: !compact,
-          grid: { color: 'rgba(255, 255, 255, 0.08)' },
-          ticks: { color: '#6a7585', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          grid: { display: false },
+          border: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: CHART_MUTED, maxRotation: 0, autoSkip: true, maxTicksLimit: 7 },
         },
-        // display stays true even when compact — the compact chart still
-        // wants 2 dashed reference gridlines (top + middle), just no
-        // visible axis border/tick labels. beginAtZero + ticks.count:3
-        // produces exactly 3 evenly-spaced ticks (bottom/middle/top); the
-        // bottom one (index 0) is made transparent below so only the
-        // middle and top lines actually show.
         y: {
-          display: true,
+          display: !compact,
           beginAtZero: true,
-          border: { display: !compact },
-          grid: {
-            display: true,
-            color: compact
-              ? (ctx) => (ctx.index === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.25)')
-              : 'rgba(255, 255, 255, 0.08)',
-            borderDash: compact ? [4, 4] : undefined,
-          },
-          ticks: {
-            display: !compact,
-            count: compact ? 3 : undefined,
-            color: '#6a7585',
-            callback: (v) => `${v}ms`,
-          },
+          border: { display: false },
+          grid: { color: 'rgba(255, 255, 255, 0.06)' },
+          ticks: { color: CHART_MUTED, maxTicksLimit: 5, callback: (v) => `${v}ms` },
         },
       },
     },
@@ -890,7 +887,7 @@ function renderLastUpdatedCountdown(elementId) {
   if (!lastUpdatedAt) return;
   const secondsText = String(secondsUntilRefresh).padStart(2, '0');
   document.getElementById(elementId).textContent =
-    `Last updated ${formatShortTime(lastUpdatedAt)} | Next update in ${secondsText} sec.`;
+    `Updated ${formatShortTime(lastUpdatedAt)} · next check in ${secondsText}s`;
 }
 
 // Named (not an inline arrow in setInterval) so it's independently

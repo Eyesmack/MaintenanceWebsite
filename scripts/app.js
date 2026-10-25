@@ -16,11 +16,12 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
 // (operational/maintenance/down) rather than status.js's operational/
 // partial/down — this page has no "partial" concept (there's only ever
 // one app), 'maintenance' is the exact analogue.
-const FAVICON_COLORS = { operational: '#198754', maintenance: '#ffc107', down: '#dc3545' };
+const FAVICON_COLORS = { operational: '#22c55e', maintenance: '#288ef9', down: '#ef4444' };
 let faviconDataUrlCache = {};
 
-const STATE_TEXT = { operational: 'operational', down: 'down', maintenance: 'under maintenance' };
-const STATE_COLOR_CLASS = { operational: 'text-success', down: 'text-danger', maintenance: 'text-warning' };
+const STATE_TEXT = { operational: 'Operational', down: 'Down', maintenance: 'Maintenance' };
+// style.css's data-state names for each page state (colours the chip).
+const STATE_DATA = { operational: 'up', down: 'down', maintenance: 'maintenance' };
 
 // Overall Uptime's 4 fixed windows, each independently clamped to
 // targetApp's own monitoring-start date via getRollingWindow below.
@@ -89,13 +90,12 @@ function updateFaviconAndTitle(state) {
   document.title = `${prefix}${baseTitle}`;
 }
 
-// Header replaces the old badge + message entirely: "<AppName> is
-// <state>", state word colored via Bootstrap's text-success/-warning/
-// -danger utilities (no new CSS) — same color families as the favicon.
+// The state chip beside the app's name — same colour families as the
+// favicon.
 function setAppState(state) {
-  const stateSpan = document.getElementById('app-state');
-  stateSpan.textContent = STATE_TEXT[state];
-  stateSpan.className = STATE_COLOR_CLASS[state];
+  const chip = document.getElementById('app-state');
+  chip.textContent = STATE_TEXT[state];
+  chip.dataset.state = STATE_DATA[state];
 }
 
 // Generalized version of the old getAppUptimeWindow: rolling `windowMs`
@@ -306,6 +306,7 @@ async function scheduleAppRefresh() {
 }
 
 function renderNotFound() {
+  document.getElementById('app-crumb').textContent = 'Not found';
   const raw = new URLSearchParams(location.search).get('app');
   document.getElementById('app-not-found-message').textContent = raw
     ? `No app named "${raw}" was found. It may have been renamed or removed.`
@@ -321,7 +322,6 @@ async function init() {
 
   document.getElementById('app-loading').classList.add('d-none');
   document.getElementById('version-text').textContent = VERSION_NUMBER;
-  document.getElementById('version-text-top').textContent = VERSION_NUMBER;
 
   if (!targetApp) {
     renderNotFound(); // No GitHub proxy fetch — nothing to look up.
@@ -331,6 +331,21 @@ async function init() {
   baseTitle = `${getAppName(targetApp)} | Status | Isaac Mason`;
   document.title = baseTitle;
   document.getElementById('app-name').textContent = getAppName(targetApp);
+  document.getElementById('app-crumb').textContent = getAppName(targetApp);
+
+  // The service's own address, as a link — hostname only, for readability.
+  const appUrl = apps[targetApp].url;
+  if (appUrl) {
+    const link = document.getElementById('app-url');
+    link.href = appUrl;
+    try {
+      link.textContent = `${new URL(appUrl).hostname} ↗`;
+    } catch {
+      link.textContent = `${appUrl} ↗`;
+    }
+    link.classList.remove('d-none');
+  }
+
   document.getElementById('app-found').classList.remove('d-none');
   startCountdownTicker('last-updated');
 

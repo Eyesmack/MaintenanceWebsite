@@ -3,51 +3,94 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1220">
     <title>Incident History | Isaac Mason</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <link rel="stylesheet" href="style.css">
   </head>
-  <body>
-    <div class="container py-5">
-      <div class="row justify-content-center">
-        <div class="col-12 col-md-11">
-          <div class="card home-card shadow-lg p-4 pt-0 text-center">
-            <div class="card-header position-relative d-flex align-items-center">
-              <small><a href="./" class="version-text">&larr; Back to Status</a></small>
-              <small class="position-absolute top-50 start-50 translate-middle version-text" id="version-text-top"></small>
-            </div>
-            <div class="card-body">
-              <h1 class="text">Incident History</h1>
-              <p class="lead mb-4 text">Downtime totals and past incidents, by month.</p>
+  <body id="top">
+    <header class="site-header" data-bs-theme="dark">
+      <div class="container site-header-inner">
+        <a class="site-logo" href="./" aria-label="Isaac's Index status home">
+          <img src="assets/logo-header.png" alt="Isaac's Index" class="site-logo-img">
+          <span class="site-logo-tag">Status</span>
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <a href="./">Overview</a>
+          <a href="history" class="active" aria-current="page">History</a>
+          <a href="https://blog.isaacmason.co.nz" rel="noopener">Blog <span aria-hidden="true">&nearr;</span></a>
+        </nav>
+      </div>
+    </header>
 
-              <p class="text" id="history-status">Loading incident history…</p>
+    <main class="container st-page" data-bs-theme="dark">
+      <div class="st-eyebrow">Incident history</div>
+      <h1 class="st-title">Every outage, month by month</h1>
+      <p class="st-lead">Downtime totals for each service, then every past incident and maintenance window. Open any entry for its summary, the original notice and live updates.</p>
 
-              <div id="live-incidents" class="text-start d-none">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-4 mb-3">
-                  <h5 class="text mb-0">Live Incidents</h5>
-                  <small id="live-incidents-last-updated" class="version-text"></small>
-                </div>
-                <div id="live-incidents-list"></div>
-              </div>
+      <p class="st-loading mt-4" id="history-status">Loading incident history…</p>
 
-              <div class="table-responsive mb-4 d-none" id="monthly-summary-wrap">
-                <table class="table table-sm table-dark table-striped table-bordered table-hover text align-middle" id="monthly-summary">
-                  <thead>
-                    <tr id="monthly-summary-header"></tr>
-                  </thead>
-                  <tbody id="monthly-summary-body"></tbody>
-                </table>
-              </div>
+      <section class="st-section d-none" id="live-incidents" aria-labelledby="live-title">
+        <div class="st-section-head">
+          <h2 class="st-section-title" id="live-title">Happening now</h2>
+          <small class="st-muted" id="live-incidents-last-updated"></small>
+        </div>
+        <div class="st-timeline" id="live-incidents-list"></div>
+      </section>
 
-              <div id="incident-months" class="text-start"></div>
-            </div>
-            <div class="card-footer version-text">
-              <small id="version-text"></small>
-            </div>
+      <section class="st-section d-none" id="monthly-summary-wrap" aria-labelledby="summary-title">
+        <div class="st-section-head">
+          <h2 class="st-section-title" id="summary-title">Monthly uptime</h2>
+        </div>
+        <div class="st-table-wrap">
+          <table class="st-table" id="monthly-summary">
+            <thead>
+              <tr id="monthly-summary-header"></tr>
+            </thead>
+            <tbody id="monthly-summary-body"></tbody>
+          </table>
+        </div>
+        <div class="st-legend" aria-hidden="true">
+          <span data-state="up"><i></i>No downtime</span>
+          <span data-state="degraded"><i></i>99% or more</span>
+          <span data-state="down"><i></i>Under 99%</span>
+        </div>
+      </section>
+
+      <section class="st-section" aria-label="Past incidents" id="incident-months"></section>
+    </main>
+
+    <footer class="site-footer" data-bs-theme="dark">
+      <div class="container">
+        <div class="site-footer-grid">
+          <div class="site-footer-brand">
+            <a href="./" class="site-footer-title">Isaac's Index &middot; Status</a>
+            <p class="site-footer-about">Live status for the services I run on my home server. Every service is checked once a minute by GitHub Actions, and outages are logged as GitHub issues.</p>
           </div>
+          <nav class="site-footer-col" aria-label="Status">
+            <h2>Status</h2>
+            <ul>
+              <li><a href="./">Overview</a></li>
+              <li><a href="history">Incident history</a></li>
+              <li><a href="https://github.com/Eyesmack/MaintenanceWebsite/issues" rel="noopener" target="_blank">Issues on GitHub</a></li>
+            </ul>
+          </nav>
+          <nav class="site-footer-col" aria-label="Elsewhere">
+            <h2>Elsewhere</h2>
+            <ul>
+              <li><a href="https://blog.isaacmason.co.nz" rel="noopener">Blog</a></li>
+              <li><a href="https://blog.isaacmason.co.nz/support" rel="noopener">Support</a></li>
+              <li><a href="https://isaacmason.co.nz" rel="noopener">Homepage</a></li>
+            </ul>
+          </nav>
+        </div>
+        <div class="site-footer-bottom">
+          <span>Status page <span id="version-text"></span></span>
+          <a href="#top" class="site-footer-top">Back to top <span aria-hidden="true">&uarr;</span></a>
         </div>
       </div>
-    </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     <script src="scripts/common.js"></script>
     <script src="scripts/history.js"></script>
