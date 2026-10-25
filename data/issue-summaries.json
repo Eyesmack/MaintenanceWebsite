@@ -409,5 +409,6 @@
   "503": "My blog was temporarily unavailable due to an unknown issue, and users were unable to access it from 11:10 to 11:19 UTC on October 25, 2026. I've resolved the issue and the blog is now accessible again. (Summarised by AI, details may not be accurate)",
   "505": "phpMyAdmin was temporarily unavailable due to an issue that prevented access as of 11:20 UTC. The problem was resolved within 3 minutes, and phpMyAdmin became accessible again by 11:23 UTC. (Summarised by AI, details may not be accurate)",
   "508": "I experienced a brief outage with phpMyAdmin, making it unreachable from 11:25 UTC to 11:32 UTC. The issue is now resolved and phpMyAdmin is accessible again. (Summarised by AI, details may not be accurate)",
-  "511": "I experienced an issue with my server, making Dockge unreachable for a few minutes. The problem started at 11:30 UTC and was resolved by 11:33 UTC. (Summarised by AI, details may not be accurate)"
+  "511": "I experienced an issue with my server, making Dockge unreachable for a few minutes. The problem started at 11:30 UTC and was resolved by 11:33 UTC. (Summarised by AI, details may not be accurate)",
+  "510": "Seerr was temporarily unavailable due to a connection issue, making it unreachable from 11:29 UTC to 11:33 UTC. The issue lasted for approximately 4 minutes. Seerr is now back online and functioning normally. (Summarised by AI, details may not be accurate)"
 }
