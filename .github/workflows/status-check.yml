@@ -77,8 +77,19 @@ jobs:
           gh_retry gh label create "$STATE_LABEL" --color 6a737d \
             --description "Internal bookkeeping for the status-check workflow — do not edit" --force >/dev/null 2>&1 || true
 
-          state_issue_number=$(gh_retry gh issue list --repo "$GH_REPO" --label "$STATE_LABEL" --state open \
-            --json number --jq '(.[0].number // "")')
+          # A failed lookup (e.g. GitHub's GraphQL 504s outlasting gh_retry)
+          # must abort the run, not fall through to "no state issue exists" —
+          # this script has no `set -e`, so an empty result from a failed
+          # call used to be indistinguishable from a genuinely missing issue
+          # and filed a fresh duplicate state issue on every such run.
+          # Newest first (gh's default order), so .[0] is the one holding
+          # current counters.
+          if ! state_issue_numbers=$(gh_retry gh issue list --repo "$GH_REPO" --label "$STATE_LABEL" --state open \
+            --limit 100 --json number --jq '.[].number'); then
+            echo "::error::Could not look up the state issue — aborting rather than filing a duplicate"
+            exit 1
+          fi
+          state_issue_number=$(echo "$state_issue_numbers" | head -n 1)
           if [[ -z "$state_issue_number" ]]; then
             state_issue_url=$(gh_retry gh issue create --repo "$GH_REPO" \
               --title "Status Check Internal State (auto-managed — do not edit)" \
@@ -86,7 +97,22 @@ jobs:
             state_issue_number=$(basename "$state_issue_url")
           fi
 
-          state_json=$(gh_retry gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")')
+          # Self-heal any leftover duplicates (from before the abort above
+          # existed) by closing every open state issue but the newest. They
+          # carry no app label, so summarize-incident.yml ignores the close.
+          while IFS= read -r stale_number; do
+            [[ -z "$stale_number" ]] && continue
+            gh_retry gh issue close "$stale_number" --repo "$GH_REPO" \
+              --comment "Superseded by #$state_issue_number — only one state issue should exist." >/dev/null \
+              || echo "::warning::Could not close duplicate state issue #$stale_number"
+          done < <(echo "$state_issue_numbers" | tail -n +2)
+
+          # Same reasoning as the lookup: if the read fails, falling back to
+          # '{}' would overwrite the real counters at the end of this run.
+          if ! state_json=$(gh_retry gh issue view "$state_issue_number" --repo "$GH_REPO" --json body --jq '(.body // "{}")'); then
+            echo "::error::Could not read state issue #$state_issue_number — aborting rather than resetting its counters"
+            exit 1
+          fi
           echo "$state_json" | jq empty >/dev/null 2>&1 || state_json='{}'
 
           # Response-time samples are recorded once an hour (not every
