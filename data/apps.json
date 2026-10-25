@@ -5,7 +5,8 @@
   },
   "lc5gk8qe": {
     "name": "Blog",
-    "url": "https://blog.isaacmason.co.nz"
+    "url": "https://blog.isaacmason.co.nz",
+    "statusApi": "https://blog.isaacmason.co.nz/api/v1/status"
   },
   "7npuz2ce": {
     "name": "CDN",

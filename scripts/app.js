@@ -268,9 +268,36 @@ function updateAppRecentUpdates(recentIssues) {
   renderAppRecentUpdates(recentIssues);
 }
 
+// The "Live details" tiles, from the app's own status API (common.js
+// fetchAppDetails). The whole section stays hidden for apps without one,
+// or while it can't be reached.
+function renderAppDetails(details) {
+  const releaseTile = document.getElementById('app-release-tile');
+  const realtimeTile = document.getElementById('app-realtime-tile');
+
+  releaseTile.classList.toggle('d-none', !details?.release);
+  if (details?.release) {
+    const link = document.getElementById('app-release');
+    link.textContent = details.release;
+    // Release notes live on the app's own /changelog.
+    link.href = new URL('/changelog', appsById[targetApp].url).href;
+  }
+
+  realtimeTile.classList.toggle('d-none', !details?.realtime);
+  if (details?.realtime) {
+    const chip = document.getElementById('app-realtime');
+    const up = details.realtime === 'up';
+    chip.textContent = up ? 'Up' : 'Down';
+    chip.dataset.state = up ? 'up' : 'down';
+  }
+
+  document.getElementById('app-details').classList.toggle('d-none', !details?.release && !details?.realtime);
+}
+
 async function refreshAppPage() {
-  const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
-    await Promise.all([fetchAppIssues(allAppIds), fetchLatencyHistory(), fetchIssueSummaries()]);
+  const [{ recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries, details] =
+    await Promise.all([fetchAppIssues(allAppIds), fetchLatencyHistory(), fetchIssueSummaries(), fetchAppDetails(targetApp)]);
+  renderAppDetails(details);
   cachedIssueSummaries = issueSummaries;
 
   const issues = downEventsByApp[targetApp] || [];

@@ -6,7 +6,7 @@
 // Bumped by hand whenever status.js/app.js or their HTML changes — shown
 // in both index.html's and app.html's footers, and used by status.js's
 // checkForNewVersion to detect when a newer deploy is live.
-const VERSION_NUMBER = 'v2.0.0';
+const VERSION_NUMBER = 'v2.1.0';
 
 // apps.json ({ "<id>": { name, url } }) is shared with the GitHub Actions
 // status-check workflow so both stay in sync from one source of truth. The
@@ -37,6 +37,33 @@ async function fetchLatencyHistory() {
   } catch {
     return {};
   }
+}
+
+// An app can name a small JSON status API of its own in apps.json
+// ("statusApi" — so far only the blog: { release, realtime: "up"|"down" },
+// see the blog's api/v1/status.php). Fetched straight from the browser
+// (that endpoint allows this origin); null on any failure, so callers
+// simply show nothing extra.
+async function fetchAppDetails(app) {
+  const url = appsById[app]?.statusApi;
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// One line for an app's extra details, e.g. "Release v.2610.15.2 · Realtime
+// up", or '' when there's nothing to say.
+function appDetailsText(details) {
+  if (!details) return '';
+  const parts = [];
+  if (details.release) parts.push(`Release ${details.release}`);
+  if (details.realtime) parts.push(`Realtime ${details.realtime}`);
+  return parts.join(' · ');
 }
 
 // monitoring-start.json is committed by the workflow (see status-check.yml)

@@ -427,8 +427,13 @@ function initRecentUpdates() {
 // app every ~1 minute server-side), and no rebuilding of #status-cards
 // (the app list never changes at runtime; cachedCols reuses the same DOM).
 async function refreshAppStatus() {
-  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries] =
-    await Promise.all([fetchAppIssues(cachedAppIds), fetchLatencyHistory(), fetchIssueSummaries()]);
+  const [{ issuesByApp, recentIssues, hasOpenAutoOutage, inMaintenance, downEventsByApp }, latencyByApp, issueSummaries, detailsByApp] =
+    await Promise.all([
+      fetchAppIssues(cachedAppIds),
+      fetchLatencyHistory(),
+      fetchIssueSummaries(),
+      Promise.all(cachedAppIds.map(fetchAppDetails)).then((list) => Object.fromEntries(cachedAppIds.map((app, i) => [app, list[i]]))),
+    ]);
 
   cachedDownEventsByApp = downEventsByApp;
   cachedLatencyByApp = latencyByApp;
@@ -445,6 +450,10 @@ async function refreshAppStatus() {
     const issues = issuesByApp[app];
     setBadge(cachedCols[app], online, Boolean(issues && issues.length), Boolean(inMaintenance[app]));
     setMessage(cachedCols[app], online, issues);
+    // An app's own details (see common.js fetchAppDetails) fill the message
+    // line only while there's nothing more important to say there.
+    const message = cachedCols[app].querySelector('[data-message]');
+    if (!message.textContent) message.textContent = appDetailsText(detailsByApp[app]);
     renderUptime(app);
     renderUptimeHistory(app);
     renderLatencyHistory(app);

@@ -852,6 +852,22 @@ a.st-event-title:hover {
 .st-stats-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.st-stats-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.st-stat-link {
+  color: var(--blog-heading);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+.st-stat-link:hover {
+  color: var(--blog-accent);
+}
+.st-stat-value .st-chip {
+  font-size: 0.9rem;
+  padding: 0.25rem 0.8rem;
+}
 .st-stat {
   padding: 0.9rem 1rem;
   border: 1px solid var(--st-border);
