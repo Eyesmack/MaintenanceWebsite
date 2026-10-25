@@ -398,5 +398,6 @@
   "490": "My blog was temporarily unavailable due to an unknown issue, and I'm pleased to report that it's now back up and running. The problem lasted for about 16 minutes before I was able to resolve it. (Summarised by AI, details may not be accurate)",
   "492": "My website was temporarily unavailable due to an unknown issue, starting around 10:12 UTC on October 25, 2026. I was able to resolve the problem and it was back up by 10:27 UTC on the same day. (Summarised by AI, details may not be accurate)",
   "494": "Seerr was unreachable for a brief period starting at 10:32 UTC on October 25, 2026. I was able to resolve the issue at 10:32 UTC, and service has been restored. The outage lasted less than a minute. (Summarised by AI, details may not be accurate)",
-  "497": "I experienced an issue with phpMyAdmin, making it temporarily unreachable. The problem was resolved at 10:39 UTC on October 25, 2026. The service was restored to normal operation within a minute. (Summarised by AI, details may not be accurate)"
+  "497": "I experienced an issue with phpMyAdmin, making it temporarily unreachable. The problem was resolved at 10:39 UTC on October 25, 2026. The service was restored to normal operation within a minute. (Summarised by AI, details may not be accurate)",
+  "498": "phpMyAdmin was temporarily unavailable due to a connection issue. It's now back up and running. The problem lasted for approximately 0 minutes, as it was resolved at the same time the issue was detected. (Summarised by AI, details may not be accurate)"
 }
