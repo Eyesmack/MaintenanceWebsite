@@ -393,5 +393,6 @@
   "488": "I experienced an issue with phpMyAdmin, making it temporarily unreachable. The problem was resolved within 1 minute, with phpMyAdmin responding normally again at 09:41 UTC on October 25, 2026. (Summarised by AI, details may not be accurate)",
   "489": "phpMyAdmin was temporarily unavailable due to an issue, but it's now working normally. The problem started around 9:50 UTC and was fixed about 1 minute later, at 9:51 UTC. (Summarised by AI, details may not be accurate)",
   "486": "My blog was temporarily unavailable starting at 9:32 UTC on October 25, 2026. It was back up and working normally by 9:54 UTC the same day. The issue lasted for about 22 minutes. (Summarised by AI, details may not be accurate)",
-  "485": "My homepage and blog were unreachable starting at 9:32 UTC on October 25, 2026. The issues were resolved at 9:38 UTC for the homepage and 9:57 UTC for the blog. (Summarised by AI, details may not be accurate)"
+  "485": "My homepage and blog were unreachable starting at 9:32 UTC on October 25, 2026. The issues were resolved at 9:38 UTC for the homepage and 9:57 UTC for the blog. (Summarised by AI, details may not be accurate)",
+  "491": "My blog and phpMyAdmin were unavailable starting around 10:11 UTC on October 25, 2026. phpMyAdmin came back online about 13 hours later at 23:12 UTC, and my blog was back up about 4 minutes after that. (Summarised by AI, details may not be accurate)"
 }
