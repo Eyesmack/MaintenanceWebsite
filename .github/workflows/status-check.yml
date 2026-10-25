@@ -3,12 +3,22 @@ name: Status Check
 on:
   # GitHub's own scheduler delays/drops runs under global load, so a
   # Cloudflare Worker Cron Trigger is the primary driver: it calls the
-  # workflow_dispatch API below every 5 minutes. This schedule stays as a
-  # harmless fallback (dedupe via the auto-outage label makes double-firing
-  # safe either way).
+  # workflow_dispatch API below every minute. This schedule stays as a
+  # harmless fallback (the concurrency group below serialises it with the
+  # dispatched runs).
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+
+# A run takes 2-3 minutes but is dispatched every minute, so without this
+# several runs overlap and race on the shared state issue and on outage-issue
+# creation (duplicate issues opened in the same second, lost failure counts,
+# issues closed seconds after opening). One run at a time; GitHub keeps at
+# most one pending run and drops older pending ones, which is fine at this
+# cadence. cancel-in-progress stays false so a run never dies mid-write.
+concurrency:
+  group: status-check
+  cancel-in-progress: false
 
 permissions:
   issues: write
