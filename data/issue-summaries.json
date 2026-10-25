@@ -405,5 +405,6 @@
   "495": "My website's homepage and blog were unavailable for 14 minutes starting at 10:33 UTC. I've resolved the issue and both are now accessible again. (Summarised by AI, details may not be accurate)",
   "502": "I experienced issues with my website's homepage, blog, and phpMyAdmin, making them unreachable from 10:53 UTC on October 25, 2026. phpMyAdmin was restored at 23:53 UTC, and the homepage and blog were back up by 11:02 UTC the same day. (Summarised by AI, details may not be accurate)",
   "501": "My website was temporarily down due to an error, making the homepage and blog unreachable. The issue started at 10:51 UTC and was resolved by 11:07 UTC. (Summarised by AI, details may not be accurate)",
-  "500": "My website was temporarily unavailable due to an unknown issue, starting around 10:51 UTC on October 25, 2026. The problem was resolved about 43 minutes later, at 11:14 UTC. (Summarised by AI, details may not be accurate)"
+  "500": "My website was temporarily unavailable due to an unknown issue, starting around 10:51 UTC on October 25, 2026. The problem was resolved about 43 minutes later, at 11:14 UTC. (Summarised by AI, details may not be accurate)",
+  "503": "My blog was temporarily unavailable due to an unknown issue, and users were unable to access it from 11:10 to 11:19 UTC on October 25, 2026. I've resolved the issue and the blog is now accessible again. (Summarised by AI, details may not be accurate)"
 }
