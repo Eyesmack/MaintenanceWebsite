@@ -66,5 +66,6 @@
   "526": "Dockge was unreachable for about 6 minutes. I'm happy to report that it's now working normally again. (Summarised by AI, details may not be accurate)",
   "527": "My personal server experienced a brief outage starting at 12:05 UTC on October 26, 2026, making Dockge unreachable. The issue lasted for 2 minutes before being resolved at 12:07 UTC. Service has since returned to normal. (Summarised by AI, details may not be accurate)",
   "528": "My server was briefly unreachable due to a technical issue, causing users to get a connection error. The problem was resolved in about 15 minutes. Dockge is now working normally again. (Summarised by AI, details may not be accurate)",
-  "530": "I experienced an outage with my Notflix service, making it unreachable for about 3 minutes. I'm happy to report that the issue has been resolved and Notflix is now working normally. (Summarised by AI, details may not be accurate)"
+  "530": "I experienced an outage with my Notflix service, making it unreachable for about 3 minutes. I'm happy to report that the issue has been resolved and Notflix is now working normally. (Summarised by AI, details may not be accurate)",
+  "524": "My database was temporarily unavailable, causing issues with access. It was fixed about an hour after the problem started, at 12:57 UTC on October 26, 2026. (Summarised by AI, details may not be accurate)"
 }
