@@ -60,5 +60,6 @@
   "517": "I performed server maintenance from 1am to 3am on October 26, 2026, which caused some users to experience slow load times or errors. The maintenance took a bit longer than expected, but I've now updated the server to the latest versions to ensure security and stability. (Summarised by AI, details may not be accurate)",
   "519": "My website Isaac's Index was temporarily unreachable due to an unknown issue. It was restored to normal operation within 1 minute. (Summarised by AI, details may not be accurate)",
   "520": "My server experienced a brief issue starting at 11:03 UTC on October 26, 2026, causing Isaac's Index and Dockge to be unreachable. The problem was resolved just one minute later, at 11:04 UTC. Both services are now working normally. (Summarised by AI, details may not be accurate)",
-  "521": "My personal website Isaac's Index was temporarily unreachable due to a connection issue, and it's now back up and running after a brief outage of about 1 minute. (Summarised by AI, details may not be accurate)"
+  "521": "My personal website Isaac's Index was temporarily unreachable due to a connection issue, and it's now back up and running after a brief outage of about 1 minute. (Summarised by AI, details may not be accurate)",
+  "522": "My database was temporarily unavailable, making phpMyAdmin inaccessible. The issue lasted about 3 minutes before it was resolved. Service is now back to normal. (Summarised by AI, details may not be accurate)"
 }
